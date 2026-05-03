@@ -1,6 +1,6 @@
 import { app, BrowserWindow, ipcMain } from 'electron'
 import { join } from 'path'
-import { createPetWindow } from './window'
+import { createPetWindow, getWindowSize } from './window'
 import { loadPets } from './pet-loader'
 import { ConfigStore } from './config'
 import { ThreadMonitor } from './threads/monitor'
@@ -51,6 +51,28 @@ app.whenReady().then(() => {
 
   ipcMain.on('save-position', (_event, position: { x: number; y: number }) => {
     config!.update({ position })
+  })
+
+  ipcMain.on('set-window-position', (_event, x: number, y: number) => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.setPosition(Math.round(x), Math.round(y))
+    }
+  })
+
+  ipcMain.on('set-window-size', (_event, width: number, height: number) => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      const [currentX, currentY] = mainWindow.getPosition()
+      mainWindow.setBounds({
+        x: currentX,
+        y: currentY,
+        width: Math.round(width),
+        height: Math.round(height)
+      })
+    }
+  })
+
+  ipcMain.on('save-scale', (_event, scale: number) => {
+    config!.update({ scale })
   })
 
   ipcMain.on('trigger-poll', () => {

@@ -13,6 +13,15 @@ contextBridge.exposeInMainWorld('petBridge', {
   savePosition: (position: { x: number; y: number }) => {
     ipcRenderer.send('save-position', position)
   },
+  setWindowPosition: (x: number, y: number) => {
+    ipcRenderer.send('set-window-position', x, y)
+  },
+  saveScale: (scale: number) => {
+    ipcRenderer.send('save-scale', scale)
+  },
+  setWindowSize: (width: number, height: number) => {
+    ipcRenderer.send('set-window-size', width, height)
+  },
   triggerPoll: () => {
     ipcRenderer.send('trigger-poll')
   }

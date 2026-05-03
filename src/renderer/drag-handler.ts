@@ -1,18 +1,17 @@
 export class DragHandler {
   private el: HTMLElement
   private isDragging = false
-  private offsetX = 0
-  private offsetY = 0
-  private onDragEnd: (position: { x: number; y: number }) => void
+  private screenStartX = 0
+  private screenStartY = 0
+  private winStartX = 0
+  private winStartY = 0
   private onInteraction: () => void
 
   constructor(
     el: HTMLElement,
-    onDragEnd: (position: { x: number; y: number }) => void,
     onInteraction: () => void
   ) {
     this.el = el
-    this.onDragEnd = onDragEnd
     this.onInteraction = onInteraction
     this.el.style.cursor = 'grab'
 
@@ -29,9 +28,11 @@ export class DragHandler {
     this.isDragging = true
     this.el.style.cursor = 'grabbing'
 
-    const rect = this.el.getBoundingClientRect()
-    this.offsetX = e.clientX - rect.left
-    this.offsetY = e.clientY - rect.top
+    // Record screen-space mouse position and current window position
+    this.screenStartX = e.screenX
+    this.screenStartY = e.screenY
+    this.winStartX = window.screenX
+    this.winStartY = window.screenY
 
     this.onInteraction()
   }
@@ -39,15 +40,13 @@ export class DragHandler {
   private onPointerMove = (e: PointerEvent) => {
     if (!this.isDragging) return
 
-    const x = e.clientX - this.offsetX
-    const y = e.clientY - this.offsetY
+    const dx = e.screenX - this.screenStartX
+    const dy = e.screenY - this.screenStartY
 
-    const maxX = window.innerWidth - this.el.offsetWidth
-    const maxY = window.innerHeight - this.el.offsetHeight
-    const clampedX = Math.max(0, Math.min(x, maxX))
-    const clampedY = Math.max(0, Math.min(y, maxY))
+    const newX = this.winStartX + dx
+    const newY = this.winStartY + dy
 
-    this.el.style.transform = `translate(${clampedX}px, ${clampedY}px)`
+    window.petBridge.setWindowPosition(newX, newY)
   }
 
   private onPointerUp = () => {
@@ -56,8 +55,8 @@ export class DragHandler {
     this.isDragging = false
     this.el.style.cursor = 'grab'
 
-    const rect = this.el.getBoundingClientRect()
-    this.onDragEnd({ x: rect.left, y: rect.top })
+    // Save final position
+    window.petBridge.savePosition({ x: window.screenX, y: window.screenY })
   }
 
   destroy() {

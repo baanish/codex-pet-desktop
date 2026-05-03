@@ -39,6 +39,7 @@ export interface AppState {
 export interface AppConfig {
   selectedPetId: string | null
   position: { x: number; y: number }
+  scale: number
   alwaysOnTop: boolean
   pollIntervalMs: number
 }
@@ -46,6 +47,7 @@ export interface AppConfig {
 export const DEFAULT_CONFIG: AppConfig = {
   selectedPetId: null,
   position: { x: 0, y: 0 },
+  scale: 1,
   alwaysOnTop: true,
   pollIntervalMs: 30000
 }

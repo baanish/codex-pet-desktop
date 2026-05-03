@@ -10,6 +10,7 @@ export class SpriteEngine {
   private elapsedMs = 0
   private lastTimestamp = 0
   private running = false
+  private scale = 1
 
   constructor(canvas: HTMLCanvasElement, atlas: PetSpriteAtlas) {
     this.canvas = canvas
@@ -19,6 +20,12 @@ export class SpriteEngine {
 
     canvas.width = atlas.cellWidth
     canvas.height = atlas.cellHeight
+  }
+
+  setScale(scale: number) {
+    this.scale = scale
+    this.canvas.style.width = `${Math.round(this.atlas.cellWidth * scale)}px`
+    this.canvas.style.height = `${Math.round(this.atlas.cellHeight * scale)}px`
   }
 
   loadSpritesheet(src: string): Promise<void> {
