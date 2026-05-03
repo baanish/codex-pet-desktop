@@ -4,8 +4,8 @@
   "description": "Animated codex pet desktop overlay",
   "main": "dist/main/index.js",
   "scripts": {
-    "dev": "tsc -p tsconfig.node.json && electron .",
-    "build": "tsc -p tsconfig.node.json && tsc -p tsconfig.json",
+    "dev": "tsc -p tsconfig.node.json && tsc -p tsconfig.json && cp src/renderer/index.html dist/renderer/index.html && electron .",
+    "build": "tsc -p tsconfig.node.json && tsc -p tsconfig.json && cp src/renderer/index.html dist/renderer/index.html",
     "dist": "npm run build && electron-builder",
     "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.json"
   },
