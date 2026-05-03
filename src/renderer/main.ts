@@ -14,6 +14,7 @@ declare global {
       setWindowPosition: (x: number, y: number) => void
       saveScale: (scale: number) => void
       setWindowSize: (width: number, height: number) => void
+      showContextMenu: () => void
       triggerPoll: () => void
     }
   }
@@ -75,6 +76,12 @@ async function init() {
 
   dragHandler = new DragHandler(container, () => {
     window.petBridge.triggerPoll()
+  })
+
+  // Right-click context menu
+  container.addEventListener('contextmenu', (e: MouseEvent) => {
+    e.preventDefault()
+    window.petBridge.showContextMenu()
   })
 
   // Scroll wheel to resize

@@ -22,6 +22,9 @@ contextBridge.exposeInMainWorld('petBridge', {
   setWindowSize: (width: number, height: number) => {
     ipcRenderer.send('set-window-size', width, height)
   },
+  showContextMenu: () => {
+    ipcRenderer.send('show-context-menu')
+  },
   triggerPoll: () => {
     ipcRenderer.send('trigger-poll')
   }

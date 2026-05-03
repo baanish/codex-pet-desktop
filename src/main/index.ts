@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain } from 'electron'
+import { app, BrowserWindow, ipcMain, Menu, MenuItemConstructorOptions } from 'electron'
 import { join } from 'path'
 import { createPetWindow, getWindowSize } from './window'
 import { loadPets } from './pet-loader'
@@ -17,6 +17,67 @@ function sendToRenderer(channel: string, data: unknown) {
   if (mainWindow && !mainWindow.isDestroyed()) {
     mainWindow.webContents.send(channel, data)
   }
+}
+
+function buildContextMenu(): Menu {
+  const cfg = config!.get()
+  const currentScale = cfg.scale ?? 1
+  const currentPoll = cfg.pollIntervalMs ?? 30000
+
+  const scaleOptions: MenuItemConstructorOptions[] = [
+    { label: '50%', type: 'radio', checked: currentScale === 0.5, click: () => setScale(0.5) },
+    { label: '75%', type: 'radio', checked: currentScale === 0.75, click: () => setScale(0.75) },
+    { label: '100%', type: 'radio', checked: currentScale === 1, click: () => setScale(1) },
+    { label: '150%', type: 'radio', checked: currentScale === 1.5, click: () => setScale(1.5) },
+    { label: '200%', type: 'radio', checked: currentScale === 2, click: () => setScale(2) },
+    { label: '300%', type: 'radio', checked: currentScale === 3, click: () => setScale(3) },
+  ]
+
+  const pollOptions: MenuItemConstructorOptions[] = [
+    { label: '10s', type: 'radio', checked: currentPoll === 10000, click: () => setPoll(10000) },
+    { label: '30s', type: 'radio', checked: currentPoll === 30000, click: () => setPoll(30000) },
+    { label: '60s', type: 'radio', checked: currentPoll === 60000, click: () => setPoll(60000) },
+    { label: '120s', type: 'radio', checked: currentPoll === 120000, click: () => setPoll(120000) },
+  ]
+
+  return Menu.buildFromTemplate([
+    { label: 'Size', submenu: scaleOptions },
+    { label: 'Poll Interval', submenu: pollOptions },
+    { type: 'separator' },
+    {
+      label: 'Always on Top',
+      type: 'checkbox',
+      checked: cfg.alwaysOnTop,
+      click: (menuItem) => {
+        config!.update({ alwaysOnTop: menuItem.checked })
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          mainWindow.setAlwaysOnTop(menuItem.checked)
+        }
+      }
+    },
+    { type: 'separator' },
+    {
+      label: 'Quit',
+      accelerator: 'CmdOrCtrl+Q',
+      click: () => app.quit()
+    }
+  ])
+}
+
+function setScale(scale: number) {
+  config!.update({ scale })
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    const { width, height } = getWindowSize(scale)
+    const [x, y] = mainWindow.getPosition()
+    mainWindow.setBounds({ x, y, width, height })
+    sendToRenderer('config', config!.get())
+  }
+}
+
+function setPoll(ms: number) {
+  config!.update({ pollIntervalMs: ms })
+  monitor?.destroy()
+  monitor!.start(ms)
 }
 
 app.whenReady().then(() => {
@@ -73,6 +134,11 @@ app.whenReady().then(() => {
 
   ipcMain.on('save-scale', (_event, scale: number) => {
     config!.update({ scale })
+  })
+
+  ipcMain.on('show-context-menu', () => {
+    const menu = buildContextMenu()
+    menu.popup({ window: mainWindow! })
   })
 
   ipcMain.on('trigger-poll', () => {
