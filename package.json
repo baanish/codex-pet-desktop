@@ -1,0 +1,21 @@
+{
+  "name": "codex-pet-desktop",
+  "version": "1.0.0",
+  "description": "Animated codex pet desktop overlay",
+  "main": "dist/main/index.js",
+  "scripts": {
+    "dev": "tsc -p tsconfig.node.json && electron .",
+    "build": "tsc -p tsconfig.node.json && tsc -p tsconfig.json",
+    "dist": "npm run build && electron-builder",
+    "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "better-sqlite3": "^11.0.0"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.0",
+    "electron": "^33.0.0",
+    "electron-builder": "^25.0.0",
+    "typescript": "^5.6.0"
+  }
+}
