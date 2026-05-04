@@ -41,6 +41,33 @@ export class ThreadLabel {
       this.render()
       this.onResize?.()
     })
+
+    // Click a row → copy its PID to clipboard, briefly flash a toast on
+    // the row so the user sees something happened. Stop pointerdown so the
+    // container's drag handler doesn't intercept the click.
+    this.cardEl.addEventListener('pointerdown', (e) => {
+      e.stopPropagation()
+    })
+    this.cardEl.addEventListener('click', (e) => {
+      e.stopPropagation()
+      const target = e.target as HTMLElement | null
+      const row = target?.closest('.thread-row') as HTMLElement | null
+      if (!row) return
+      const pid = row.dataset.pid
+      if (!pid) return
+      navigator.clipboard?.writeText(pid).catch(() => {})
+      this.flashCopied(row, `pid ${pid} copied`)
+    })
+  }
+
+  private flashCopied(row: HTMLElement, message: string) {
+    const prev = row.querySelector('.thread-toast') as HTMLElement | null
+    prev?.remove()
+    const el = document.createElement('div')
+    el.className = 'thread-toast'
+    el.textContent = message
+    row.appendChild(el)
+    setTimeout(() => el.remove(), 1200)
   }
 
   update(threads: ActiveThread[]) {
@@ -88,15 +115,41 @@ export class ThreadLabel {
     const title = t.title?.trim() || 'Untitled thread'
     const subtitle = `${STATUS_WORD[t.status]} · ${t.tool}`
     const staleCls = t.status === 'stale' ? ' stale' : ''
+    const cwd = t.cwd ? this.prettyCwd(t.cwd) : ''
+    const cwdHtml = cwd
+      ? `<div class="thread-cwd" title="${this.esc(t.cwd ?? '')}">${this.esc(cwd)}</div>`
+      : ''
+    const pidAttr = t.pid != null ? ` data-pid="${t.pid}"` : ''
+    const clickableCls = t.pid != null ? ' clickable' : ''
     return `
-      <div class="thread-row${staleCls}">
+      <div class="thread-row${staleCls}${clickableCls}"${pidAttr}>
         <div class="thread-row-text">
           <div class="thread-title">${this.esc(title)}</div>
           <div class="thread-subtitle">${this.esc(subtitle)}</div>
+          ${cwdHtml}
         </div>
         ${this.statusIconHtml(t.status)}
       </div>
     `
+  }
+
+  /// Replace $HOME with ~ so cwd lines stay short. Also collapse extremely
+  /// long paths from the middle.
+  private prettyCwd(cwd: string): string {
+    let s = cwd
+    // Substitute home dir prefix. Renderer doesn't know HOME directly; the
+    // common /Users/<user>/ or /home/<user>/ prefix is close enough.
+    const macHome = s.match(/^(\/Users\/[^/]+)/)
+    const linuxHome = s.match(/^(\/home\/[^/]+)/)
+    const winHome = s.match(/^([A-Za-z]:\\Users\\[^\\]+)/)
+    const prefix = macHome?.[1] || linuxHome?.[1] || winHome?.[1]
+    if (prefix) s = '~' + s.slice(prefix.length)
+    if (s.length > 48) {
+      const head = s.slice(0, 18)
+      const tail = s.slice(-26)
+      s = `${head}…${tail}`
+    }
+    return s
   }
 
   private statusIconHtml(status: ThreadStatus): string {

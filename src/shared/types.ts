@@ -31,6 +31,8 @@ export interface ActiveThread {
   tool: string
   status: ThreadStatus
   title: string | null
+  cwd?: string | null
+  pid?: number | null
 }
 
 export interface AppState {

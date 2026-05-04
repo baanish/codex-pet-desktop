@@ -1,4 +1,4 @@
-use super::adapter::{is_pid_alive, is_pid_for_app, now_ms, ThreadAdapter};
+use super::adapter::{is_pid_alive, is_pid_for_app, now_ms, process_cwd, ThreadAdapter};
 use crate::types::{ActiveThread, ThreadStatus};
 use serde::Deserialize;
 use std::path::PathBuf;
@@ -78,6 +78,8 @@ impl ThreadAdapter for ClaudeCodeAdapter {
                         tool: self.id().into(),
                         status,
                         title: data.name,
+                        cwd: process_cwd(pid),
+                        pid: Some(pid),
                     });
                     continue;
                 }

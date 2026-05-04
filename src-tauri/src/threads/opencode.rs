@@ -1,4 +1,4 @@
-use super::adapter::{find_process_by_name, now_ms, ThreadAdapter};
+use super::adapter::{find_process_by_name, now_ms, process_cwd, ThreadAdapter};
 use crate::types::{ActiveThread, ThreadStatus};
 use std::path::PathBuf;
 
@@ -44,7 +44,7 @@ impl ThreadAdapter for OpenCodeAdapter {
             return vec![];
         }
 
-        if find_process_by_name("opencode").is_none() {
+        let Some(pid) = find_process_by_name("opencode") else {
             // No live opencode process → no row. Returning a `Stale` entry
             // here would surface a row in the card every time the user
             // exited opencode, which is noise (the user explicitly asked
@@ -52,7 +52,8 @@ impl ThreadAdapter for OpenCodeAdapter {
             // covers the genuinely-degraded case where the adapter itself
             // wedged.
             return vec![];
-        }
+        };
+        let cwd = process_cwd(pid);
 
         let conn = match rusqlite::Connection::open_with_flags(
             &self.db_path,
@@ -76,6 +77,8 @@ impl ThreadAdapter for OpenCodeAdapter {
                 tool: self.id().into(),
                 status: ThreadStatus::Waiting,
                 title: None,
+                cwd: cwd.clone(),
+                pid: Some(pid),
             }];
         };
 
@@ -91,6 +94,8 @@ impl ThreadAdapter for OpenCodeAdapter {
                 ThreadStatus::Waiting
             },
             title,
+            cwd,
+            pid: Some(pid),
         }]
     }
 }

@@ -51,10 +51,19 @@ pub enum ThreadStatus {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ActiveThread {
     pub tool: String,
     pub status: ThreadStatus,
     pub title: Option<String>,
+    /// Working directory of the underlying agent process, if we could resolve
+    /// it. Surfaced in the card so the user can tell similarly-titled
+    /// sessions apart by location.
+    #[serde(default)]
+    pub cwd: Option<String>,
+    /// PID of the underlying agent process, if known. Click-to-copy in the UI.
+    #[serde(default)]
+    pub pid: Option<u32>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

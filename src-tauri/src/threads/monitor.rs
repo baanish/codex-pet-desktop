@@ -183,6 +183,8 @@ impl ThreadMonitor {
                         tool: t.tool.clone(),
                         status: ThreadStatus::Stale,
                         title: t.title.clone(),
+                        cwd: t.cwd.clone(),
+                        pid: t.pid,
                     });
                 }
             }

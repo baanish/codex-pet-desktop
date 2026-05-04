@@ -119,6 +119,20 @@ fn process_is_macos_gui_bundle(proc_: &sysinfo::Process) -> bool {
     false
 }
 
+/// Resolve the working directory of `pid`, if the OS will tell us. macOS
+/// requires the calling process to have permission to introspect another
+/// process; sysinfo wraps libproc on darwin and can return None for system
+/// or sandboxed processes. That's fine — we just omit the cwd from the row.
+pub fn process_cwd(pid: u32) -> Option<String> {
+    use sysinfo::{Pid, ProcessRefreshKind, RefreshKind, System};
+    let sys = System::new_with_specifics(
+        RefreshKind::new().with_processes(ProcessRefreshKind::everything()),
+    );
+    let p = sys.process(Pid::from_u32(pid))?;
+    let cwd = p.cwd()?;
+    Some(cwd.to_string_lossy().into_owned())
+}
+
 pub fn now_ms() -> u64 {
     use std::time::{SystemTime, UNIX_EPOCH};
     SystemTime::now()

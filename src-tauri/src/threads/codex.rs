@@ -1,4 +1,4 @@
-use super::adapter::{find_process_by_name, now_ms, ThreadAdapter};
+use super::adapter::{find_process_by_name, now_ms, process_cwd, ThreadAdapter};
 use crate::types::{ActiveThread, ThreadStatus};
 use std::path::{Path, PathBuf};
 
@@ -69,15 +69,18 @@ impl ThreadAdapter for CodexAdapter {
         if !has_recent_codex_session_dir(&locks_dir) {
             return vec![];
         }
-        if find_process_by_name("codex").is_none() {
+        let Some(pid) = find_process_by_name("codex") else {
             return vec![];
-        }
+        };
+        let cwd = process_cwd(pid);
 
         if !self.db_path.exists() {
             return vec![ActiveThread {
                 tool: self.id().into(),
                 status: ThreadStatus::Busy,
                 title: None,
+                cwd,
+                pid: Some(pid),
             }];
         }
 
@@ -108,6 +111,8 @@ impl ThreadAdapter for CodexAdapter {
                 tool: self.id().into(),
                 status: ThreadStatus::Waiting,
                 title: None,
+                cwd,
+                pid: Some(pid),
             }];
         };
 
@@ -125,6 +130,8 @@ impl ThreadAdapter for CodexAdapter {
                 ThreadStatus::Waiting
             },
             title,
+            cwd,
+            pid: Some(pid),
         }]
     }
 }
