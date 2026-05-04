@@ -20,8 +20,8 @@ export function createPetWindow(config: AppConfig): BrowserWindow {
   // Use full display bounds (not workArea) so the pet can sit under the dock/menu bar
   const display = screen.getPrimaryDisplay()
   const { x: screenX, y: screenY, width: screenW, height: screenH } = display.bounds
-  const x = Math.max(screenX - width + 40, Math.min(position.x, screenX + screenW - 40))
-  const y = Math.max(screenY - height + 40, Math.min(position.y, screenY + screenH - 40))
+  const x = Math.max(screenX - width + 10, Math.min(position.x, screenX + screenW - 10))
+  const y = Math.max(screenY - height + 10, Math.min(position.y, screenY + screenH - 10))
 
   const win = new BrowserWindow({
     width,
