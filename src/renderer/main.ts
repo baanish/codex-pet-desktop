@@ -109,12 +109,12 @@ function reportBounds() {
   })
 }
 
-async function spritesheetUrl(absPath: string): Promise<string> {
-  // Tauri's asset:// protocol misbehaved with absolute paths in this scope,
-  // so we marshal the bytes back through IPC and use a blob URL instead.
-  const bytes = await invoke<number[]>('read_pet_image', { path: absPath })
+async function spritesheetUrl(pet: PetInfo): Promise<string> {
+  // ID-based read, not path-based — the Rust side resolves the path itself
+  // so the renderer can't request arbitrary files.
+  const bytes = await invoke<number[]>('read_pet_image', { petId: pet.id })
   const u8 = new Uint8Array(bytes)
-  const ext = absPath.split('.').pop()?.toLowerCase() ?? ''
+  const ext = pet.spritesheetAbsPath.split('.').pop()?.toLowerCase() ?? ''
   const mime = ext === 'webp' ? 'image/webp' : ext === 'png' ? 'image/png' : 'application/octet-stream'
   return URL.createObjectURL(new Blob([u8], { type: mime }))
 }
@@ -260,7 +260,7 @@ async function init() {
   // Subscribe to backend events
   await listen<PetInfo>('pet-data', async (event) => {
     if (engine) {
-      const src = await spritesheetUrl(event.payload.spritesheetAbsPath)
+      const src = await spritesheetUrl(event.payload)
       await engine.loadSpritesheet(src)
       engine.setAnimation('idle')
       engine.start()
@@ -321,7 +321,7 @@ async function init() {
       const cfg = await invoke<AppConfig>('get_config')
       const selected =
         (cfg.selectedPetId && pets.find(p => p.id === cfg.selectedPetId)) || pets[0]
-      const src = await spritesheetUrl(selected.spritesheetAbsPath)
+      const src = await spritesheetUrl(selected)
       await engine.loadSpritesheet(src)
       engine.setAnimation('idle')
       engine.start()

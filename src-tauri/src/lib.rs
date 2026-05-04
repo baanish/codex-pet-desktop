@@ -127,8 +127,19 @@ fn list_pets() -> Vec<types::PetInfo> {
 }
 
 #[tauri::command]
-fn read_pet_image(path: String) -> Result<Vec<u8>, String> {
-    std::fs::read(&path).map_err(|e| format!("read {}: {}", path, e))
+fn read_pet_image(pet_id: String) -> Result<Vec<u8>, String> {
+    // ID-based lookup, not path-based. The renderer is untrusted enough that
+    // accepting an arbitrary filesystem path here would make any renderer
+    // injection a "read any file the user can read" primitive. By going
+    // through pet_loader the only readable bytes are spritesheets in the
+    // known pet directories (~/.codex/pets/, the built-in cache, or the
+    // CODEX_PETS_DIR override).
+    let pets = pet_loader::load_pets();
+    let Some(pet) = pets.iter().find(|p| p.id == pet_id) else {
+        return Err(format!("unknown pet: {}", pet_id));
+    };
+    std::fs::read(&pet.spritesheet_abs_path)
+        .map_err(|e| format!("read pet image {}: {}", pet_id, e))
 }
 
 pub fn run() {
@@ -140,7 +151,6 @@ pub fn run() {
     }
 
     tauri::Builder::default()
-        .plugin(tauri_plugin_fs::init())
         .on_menu_event(|app, event| {
             menu::handle_event(app, event.id().0.as_str());
         })
