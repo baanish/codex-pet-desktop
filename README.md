@@ -43,21 +43,89 @@ unsigned).
 
 ### From source
 
-You need [Rust](https://rustup.rs/) and Node 18+. Then:
+You need [Rust](https://rustup.rs/) (1.77+) and Node 18+, plus a
+platform-specific C/C++ toolchain.
+
+> **Heads up: only macOS is verified.** The Linux and Windows build
+> recipes below compile cleanly and `tauri build` produces packages,
+> but the maintainer has not run them end-to-end. Expect some
+> platform-specific edges (system tray icon paths, font fallback,
+> WebView2 redistributable on older Windows installs). PRs that verify
+> these flows are welcome.
+
+#### macOS (verified)
 
 ```bash
+xcode-select --install                  # if you don't have it yet
 git clone <repo>
 cd codex-pet-desktop
 npm install
-npm run tauri:build      # produces a bundle for the host platform
+npm run tauri:build                     # → src-tauri/target/release/bundle/{macos,dmg}/
 ```
 
-`tauri build` packages whatever targets your host can produce:
-`.app` + `.dmg` on macOS, `.deb` + `.AppImage` + `.rpm` on Linux,
-`.msi` + NSIS `.exe` on Windows. Only macOS has been smoke-tested by
-the maintainer; Linux/Windows builds compile and bundle but you may
-hit platform-specific edges. PRs welcome for verification on those
-platforms.
+Outputs `Codex Pet Desktop.app` and `Codex Pet Desktop_*.dmg`. The
+build is unsigned; first launch needs a right-click → Open or you can
+notarize/sign it yourself by configuring `bundle.macOS.signingIdentity`
+in `src-tauri/tauri.conf.json`.
+
+#### Linux (untested)
+
+```bash
+# Debian/Ubuntu
+sudo apt update
+sudo apt install -y libwebkit2gtk-4.1-dev build-essential curl wget \
+                    file libxdo-dev libssl-dev libayatana-appindicator3-dev \
+                    librsvg2-dev
+
+# Fedora
+sudo dnf install -y webkit2gtk4.1-devel openssl-devel curl wget file \
+                    libappindicator-gtk3-devel librsvg2-devel
+
+curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -   # if missing
+git clone <repo>
+cd codex-pet-desktop
+npm install
+npm run tauri:build                     # → src-tauri/target/release/bundle/{deb,appimage,rpm}/
+```
+
+Likely working but not verified by the maintainer:
+- Stage Manager / panel-layer behavior is macOS-specific; on GNOME and
+  KDE the always-on-top semantics may differ.
+- `~/.codex/pets/` and `~/.config/codex-pet-desktop/` paths are correct
+  per `dirs::*`, but I haven't installed an actual session there yet.
+- The codex/claude/opencode adapters still rely on agent installs
+  putting their state under `~/.codex/`, `~/.claude/`, and
+  `~/.local/share/opencode/` respectively. If your distro/agent uses a
+  different XDG layout, set `CODEX_PETS_DIR` or open an adapter PR.
+
+#### Windows (untested)
+
+```powershell
+# Install prerequisites once:
+#   - Visual Studio Build Tools (Desktop development with C++)
+#   - WebView2 Evergreen runtime (most Win10/11 installs already have it)
+#   - Rust (rustup-init.exe)
+#   - Node 20+
+git clone <repo>
+cd codex-pet-desktop
+npm install
+npm run tauri:build                     # → src-tauri\target\release\bundle\{msi,nsis}\
+```
+
+Likely working but not verified by the maintainer:
+- The macOS-specific window code (panel-style, Stage Manager bypass)
+  is `#[cfg(target_os = "macos")]`-gated; on Windows you get a normal
+  always-on-top transparent layered window.
+- `find_process_by_name` uses `sysinfo`'s NtQuerySystemInformation
+  backend on Windows. Should work, but agent process names may differ
+  (`codex.exe` vs `codex`, etc.).
+- Pet sprites under `%USERPROFILE%\.codex\pets\` and the cache under
+  `%LOCALAPPDATA%\codex-pet-desktop\` are derived from `dirs::*`; the
+  Codex.app asar discovery is gated to macOS only.
+
+If you build on either platform and something works (or doesn't),
+please [open an issue or PR](#contributing) so we can mark it verified
+or fix the rough edges.
 
 For local development:
 

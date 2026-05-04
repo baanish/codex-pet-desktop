@@ -49,11 +49,21 @@ pub struct AsarReader {
     file: File,
     pub header: AsarHeader,
     pub data_offset: u64,
+    pub file_len: u64,
 }
+
+/// Hard cap on any single asar entry we'll allocate for. The largest
+/// legitimate Codex spritesheet is ~1 MB; this leaves headroom while
+/// preventing a malformed/hostile header from triggering a multi-GB
+/// `vec![0; size]` during startup pet discovery.
+pub const MAX_ENTRY_BYTES: u64 = 16 * 1024 * 1024;
+
+const MAX_HEADER_BYTES: usize = 64 * 1024 * 1024;
 
 impl AsarReader {
     pub fn open(path: &Path) -> std::io::Result<Self> {
         let mut file = File::open(path)?;
+        let file_len = file.metadata()?.len();
         let mut buf4 = [0u8; 4];
 
         // Pickle: read u32 = size of next pickle (always 4 — it just holds a u32).
@@ -61,6 +71,12 @@ impl AsarReader {
         // Pickle: read u32 = header_size value.
         file.read_exact(&mut buf4)?;
         let header_size = u32::from_le_bytes(buf4) as usize;
+        if header_size > MAX_HEADER_BYTES || (header_size as u64) > file_len {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "asar header_size out of range",
+            ));
+        }
 
         let mut header_buf = vec![0u8; header_size];
         file.read_exact(&mut header_buf)?;
@@ -97,6 +113,7 @@ impl AsarReader {
             file,
             header,
             data_offset,
+            file_len,
         })
     }
 
@@ -131,8 +148,31 @@ impl AsarReader {
                 ))
             }
         };
-        self.file
-            .seek(SeekFrom::Start(self.data_offset + offset))?;
+
+        // Validate before allocating: the asar header is untrusted, so we
+        // refuse to hand out a Vec<u8> bigger than our entry cap and we
+        // refuse to read past the file's actual length (a corrupt or
+        // hostile archive could otherwise OOM us during pet discovery).
+        if size > MAX_ENTRY_BYTES {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                format!("asar entry too large: {} bytes", size),
+            ));
+        }
+        let abs_start = self.data_offset.checked_add(offset).ok_or_else(|| {
+            std::io::Error::new(std::io::ErrorKind::InvalidData, "asar offset overflow")
+        })?;
+        let abs_end = abs_start.checked_add(size).ok_or_else(|| {
+            std::io::Error::new(std::io::ErrorKind::InvalidData, "asar size overflow")
+        })?;
+        if abs_end > self.file_len {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "asar entry extends past archive end",
+            ));
+        }
+
+        self.file.seek(SeekFrom::Start(abs_start))?;
         let mut buf = vec![0u8; size as usize];
         self.file.read_exact(&mut buf)?;
         Ok(buf)

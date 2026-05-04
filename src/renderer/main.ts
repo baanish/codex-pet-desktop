@@ -33,33 +33,29 @@ function applyScale(scale: number) {
   reportBounds()
 }
 
+interface VirtualBounds { x: number; y: number; w: number; h: number }
+let virtualBounds: VirtualBounds | null = null
+
 function clampToVisible(x: number, y: number, container: HTMLElement) {
-  // Only clamp if the renderer can confidently reason about screen geometry.
-  // In some Tauri/WebKit configurations window.screenX/Y come back unreliable
-  // (e.g., the screen height instead of the window's top), which would make
-  // every saved position get pushed off-screen.
-  const winX = window.screenX
-  const winY = window.screenY
-  const sw = window.screen.width
-  const sh = window.screen.height
-  if (
-    !Number.isFinite(winX) || !Number.isFinite(winY) ||
-    winX < -1000 || winX >= sw ||
-    winY < -1000 || winY >= sh
-  ) {
+  // The overlay spans the union of every connected monitor; window.screen.*
+  // only describes the primary one, so clamping against it would push valid
+  // secondary-monitor positions back onto the primary screen. Use Rust's
+  // virtual-desktop bounds if we have them, otherwise leave the position
+  // untouched.
+  const vb = virtualBounds
+  if (!vb || vb.w <= 0 || vb.h <= 0) {
     return { x, y }
   }
   const petW = container.offsetWidth || 96
   const petH = container.offsetHeight || 100
-  const petScreenLeft = winX + x
-  const petScreenRight = petScreenLeft + petW
-  const petScreenTop = winY + y
-  const petScreenBottom = petScreenTop + petH
   let newX = x, newY = y
-  if (petScreenRight < 0) newX = -winX + 100
-  else if (petScreenLeft >= sw) newX = -winX + sw - petW - 100
-  if (petScreenBottom < 0) newY = -winY + 100
-  else if (petScreenTop >= sh) newY = -winY + sh - petH - 100
+  // If the pet would be entirely outside the union of monitors, reel it back
+  // so it's at least partially visible. Don't touch positions inside the
+  // virtual desktop, even if they're on a non-primary display.
+  if (x + petW <= vb.x) newX = vb.x + 100
+  else if (x >= vb.x + vb.w) newX = vb.x + vb.w - petW - 100
+  if (y + petH <= vb.y) newY = vb.y + 100
+  else if (y >= vb.y + vb.h) newY = vb.y + vb.h - petH - 100
   return { x: newX, y: newY }
 }
 
@@ -292,6 +288,15 @@ async function init() {
   await listen<{ name: string; speed: number }>('animation-speed', (event) => {
     engine?.setAnimationSpeed(event.payload.name, event.payload.speed)
   })
+
+  // Pull virtual-desktop bounds before applying the saved position so the
+  // first clamp pass uses real geometry instead of window.screen.* (which
+  // would be primary-monitor-only).
+  try {
+    virtualBounds = await invoke<VirtualBounds>('get_virtual_bounds')
+  } catch (e) {
+    console.error('get_virtual_bounds failed:', e)
+  }
 
   // Bootstrap from invoke after listeners are wired, since events emitted
   // during the Rust setup() phase fire before the JS side can attach.

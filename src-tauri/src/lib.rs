@@ -154,6 +154,53 @@ fn list_pets() -> Vec<types::PetInfo> {
     pet_loader::load_pets()
 }
 
+/// The bounding box of every connected monitor, in CSS coordinates relative
+/// to the overlay window's top-left. The renderer uses this for visibility
+/// clamping; window.screen.* would only describe the primary monitor and
+/// would push positions saved on a secondary display back onto the primary.
+#[derive(serde::Serialize)]
+struct VirtualBounds {
+    x: f64,
+    y: f64,
+    w: f64,
+    h: f64,
+}
+
+#[tauri::command]
+fn get_virtual_bounds(
+    state: tauri::State<AppState>,
+    app: AppHandle,
+) -> VirtualBounds {
+    let monitors = app.available_monitors().unwrap_or_default();
+    if monitors.is_empty() {
+        return VirtualBounds { x: 0.0, y: 0.0, w: 0.0, h: 0.0 };
+    }
+    let (mut min_x, mut min_y, mut max_x, mut max_y) =
+        (i32::MAX, i32::MAX, i32::MIN, i32::MIN);
+    for m in &monitors {
+        let pos = m.position();
+        let size = m.size();
+        let scale = m.scale_factor();
+        // Tauri reports physical pixels; convert to CSS so they line up with
+        // getBoundingClientRect() in the renderer.
+        let css_x = (pos.x as f64) / scale;
+        let css_y = (pos.y as f64) / scale;
+        let css_w = size.width as f64 / scale;
+        let css_h = size.height as f64 / scale;
+        min_x = min_x.min(css_x as i32);
+        min_y = min_y.min(css_y as i32);
+        max_x = max_x.max((css_x + css_w) as i32);
+        max_y = max_y.max((css_y + css_h) as i32);
+    }
+    let (ox, oy) = *state.overlay_origin.lock();
+    VirtualBounds {
+        x: (min_x - ox) as f64,
+        y: (min_y - oy) as f64,
+        w: (max_x - min_x) as f64,
+        h: (max_y - min_y) as f64,
+    }
+}
+
 #[tauri::command]
 fn read_pet_image(pet_id: String) -> Result<Vec<u8>, String> {
     // ID-based lookup, not path-based. The renderer is untrusted enough that
@@ -231,6 +278,7 @@ pub fn run() {
             read_pet_image,
             set_pet_hit_regions,
             set_dragging,
+            get_virtual_bounds,
         ])
         .setup(|app| {
             #[cfg(target_os = "macos")]
