@@ -19,6 +19,7 @@ export function isPidAlive(pid: number): boolean {
 }
 
 export function findProcessByName(pattern: string): number | null {
+  // Try pgrep first
   try {
     const result = execSync(`pgrep -f "${pattern}"`, {
       encoding: 'utf-8',
@@ -32,6 +33,22 @@ export function findProcessByName(pattern: string): number | null {
   } catch {
     // pgrep returns exit 1 if no match
   }
+
+  // Fallback: ps aux | grep (macOS pgrep can miss some processes)
+  try {
+    const result = execSync(`ps aux | grep "[${pattern[0]}]${pattern.slice(1)}" | awk '{print $2}' | head -1`, {
+      encoding: 'utf-8',
+      timeout: 5000,
+      stdio: ['pipe', 'pipe', 'pipe']
+    })
+    const pid = result.trim()
+    if (pid) {
+      return parseInt(pid, 10)
+    }
+  } catch {
+    // ignore
+  }
+
   return null
 }
 
