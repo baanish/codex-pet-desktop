@@ -329,6 +329,12 @@ async function init() {
   } catch (e) {
     console.error('pet bootstrap failed:', e)
   }
+
+  // The first poll fires inside Rust setup() before any of the listeners
+  // above have attached, so the resulting thread-state is lost. Now that the
+  // renderer is fully wired, ask Rust for a fresh poll so an already-running
+  // session shows up immediately instead of after the next 30s tick.
+  invoke('trigger_poll')
 }
 
 init().catch(console.error)

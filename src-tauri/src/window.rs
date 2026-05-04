@@ -2,7 +2,11 @@ use tauri::{
     AppHandle, PhysicalPosition, PhysicalSize, WebviewUrl, WebviewWindow, WebviewWindowBuilder,
 };
 
-pub fn create_pet_window(app: &AppHandle) -> tauri::Result<WebviewWindow> {
+/// Returns the created window plus the screen position of its content area's
+/// top-left corner. Callers persist that position in `AppState.overlay_origin`
+/// so the rest of the app can translate between renderer CSS coordinates and
+/// screen coordinates.
+pub fn create_pet_window(app: &AppHandle) -> tauri::Result<(WebviewWindow, (i32, i32))> {
     // Compute the bounding box of every connected monitor. The overlay needs
     // to span the full virtual desktop so the user can drop the pet on any
     // display, not just the primary one.
@@ -87,5 +91,15 @@ pub fn create_pet_window(app: &AppHandle) -> tauri::Result<WebviewWindow> {
         let _ = win.set_ignore_cursor_events(true);
     }
 
-    Ok(win)
+    // The overlay's screen origin (CSS pixels) — used to translate between
+    // renderer coordinates and screen coordinates. In dev mode the window is
+    // a regular decorated rect at (100, 60); in overlay mode it's at
+    // (target_x, target_y) which can be negative on multi-monitor setups.
+    let origin = if dev_mode {
+        (100, 60)
+    } else {
+        (target_x, target_y)
+    };
+
+    Ok((win, origin))
 }

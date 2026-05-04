@@ -25,6 +25,12 @@ pub struct AppState {
     pub is_dragging: Mutex<bool>,
     pub debug_animation: Mutex<Option<String>>,
     pub pingpong: Mutex<HashMap<String, bool>>,
+    /// Screen position of the overlay window's top-left corner. Used to
+    /// translate between the renderer's CSS coordinate system (relative to
+    /// the overlay) and the screen coordinates we persist to disk so the
+    /// config stays portable across the legacy Electron build and across
+    /// multi-monitor layouts where the overlay origin can be negative.
+    pub overlay_origin: Mutex<(i32, i32)>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -79,12 +85,30 @@ const DEFAULT_PINGPONG: &[(&str, bool)] = &[
 
 #[tauri::command]
 fn get_config(state: tauri::State<AppState>) -> AppConfig {
-    state.config.get()
+    config_for_renderer(&state)
+}
+
+/// The renderer always sees positions in CSS coordinates relative to the
+/// overlay window's content area (since that's what `getBoundingClientRect()`
+/// gives it). Disk persists the position in screen coordinates, so settings
+/// remain portable across the legacy Electron build and across multi-monitor
+/// configurations where the overlay's screen origin is non-zero.
+fn config_for_renderer(state: &AppState) -> AppConfig {
+    let mut cfg = state.config.get();
+    let (ox, oy) = *state.overlay_origin.lock();
+    cfg.position.x -= ox as f64;
+    cfg.position.y -= oy as f64;
+    cfg
 }
 
 #[tauri::command]
 fn save_position(state: tauri::State<AppState>, position: Position) {
-    state.config.update(|c| c.position = position);
+    let (ox, oy) = *state.overlay_origin.lock();
+    let screen = Position {
+        x: position.x + ox as f64,
+        y: position.y + oy as f64,
+    };
+    state.config.update(|c| c.position = screen);
 }
 
 #[tauri::command]
@@ -188,7 +212,7 @@ pub fn run() {
             std::fs::create_dir_all(&user_data).ok();
             let config = ConfigStore::new(user_data);
 
-            let win = window::create_pet_window(app.handle())?;
+            let (win, overlay_origin) = window::create_pet_window(app.handle())?;
 
             // Apply restored position once the window settles
             let cfg_initial = config.get();
@@ -220,6 +244,7 @@ pub fn run() {
                 is_dragging: Mutex::new(false),
                 debug_animation: Mutex::new(None),
                 pingpong: Mutex::new(pingpong),
+                overlay_origin: Mutex::new(overlay_origin),
             };
             app.manage(state);
 
@@ -239,7 +264,11 @@ pub fn run() {
             {
                 let _ = app.emit("pet-data", &selected);
             }
-            let _ = app.emit("config", &cfg_initial);
+            // Translate to renderer (CSS) coordinates before emitting.
+            let mut cfg_for_renderer = cfg_initial.clone();
+            cfg_for_renderer.position.x -= overlay_origin.0 as f64;
+            cfg_for_renderer.position.y -= overlay_origin.1 as f64;
+            let _ = app.emit("config", &cfg_for_renderer);
             for (name, speed) in &cfg_initial.animation_speeds {
                 let _ = app.emit(
                     "animation-speed",
@@ -268,8 +297,8 @@ pub fn run() {
 
 #[tauri::command]
 fn set_text_size(state: tauri::State<AppState>, app: AppHandle, size: String) {
-    let cfg = state.config.update(|c| c.text_size = size.clone());
-    let _ = app.emit("config", &cfg);
+    state.config.update(|c| c.text_size = size.clone());
+    let _ = app.emit("config", &config_for_renderer(&state));
 }
 
 #[tauri::command]

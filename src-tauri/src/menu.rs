@@ -6,6 +6,14 @@ pub fn handle_event<R: Runtime>(app: &AppHandle<R>, id: &str) {
     handle_menu_event(app, id);
 }
 
+fn render_config(state: &State<AppState>) -> crate::types::AppConfig {
+    let mut cfg = state.config.get();
+    let (ox, oy) = *state.overlay_origin.lock();
+    cfg.position.x -= ox as f64;
+    cfg.position.y -= oy as f64;
+    cfg
+}
+
 const ALL_ANIMATIONS: &[&str] = &[
     "idle",
     "running-right",
@@ -269,10 +277,12 @@ fn handle_menu_event<R: Runtime>(app: &AppHandle<R>, id: &str) {
     if let Some(value) = id.strip_prefix("scale:") {
         if let Ok(v) = value.parse::<f64>() {
             state.config.update(|c| c.scale = v);
-            let _ = app.emit("config", &state.config.get());
+            let cfg = render_config(&state);
+            let _ = app.emit("config", &cfg);
         }
     } else if let Some(value) = id.strip_prefix("text:") {
-        let cfg = state.config.update(|c| c.text_size = value.into());
+        state.config.update(|c| c.text_size = value.into());
+        let cfg = render_config(&state);
         let _ = app.emit("config", &cfg);
     } else if let Some(value) = id.strip_prefix("poll:") {
         if let Ok(v) = value.parse::<u64>() {
