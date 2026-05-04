@@ -190,14 +190,51 @@ fn load_codex_builtin_pets() -> Vec<PetInfo> {
             continue;
         }
 
+        // TOCTOU defense: a local attacker (or a resurrected stale entry)
+        // could pre-create dest as a symlink before we run, and we'd
+        // happily skip writing and hand the symlink path to read_pet_image.
+        // Always remove the file if its symlink_metadata says it's a link;
+        // any rewrite below proceeds via O_EXCL semantics on platforms that
+        // support it via std::fs.
+        if let Ok(meta) = std::fs::symlink_metadata(&dest) {
+            if meta.file_type().is_symlink() {
+                let _ = std::fs::remove_file(&dest);
+            }
+        }
+
         if !dest.exists() {
             let bytes = match reader.read_file(&path) {
                 Ok(b) => b,
                 Err(_) => continue,
             };
-            if std::fs::write(&dest, &bytes).is_err() {
+            // Use OpenOptions::create_new to refuse if the path materialized
+            // between the remove and the write (symlink race), then write
+            // bytes into the actual regular file.
+            use std::fs::OpenOptions;
+            use std::io::Write;
+            let mut file = match OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .open(&dest)
+            {
+                Ok(f) => f,
+                Err(_) => continue,
+            };
+            if file.write_all(&bytes).is_err() {
+                let _ = std::fs::remove_file(&dest);
                 continue;
             }
+        }
+
+        // Final canonicalization: the resolved sprite path must live inside
+        // canonical_cache. This rejects any symlink that snuck in despite
+        // the prior checks.
+        let canonical_dest = match dest.canonicalize() {
+            Ok(p) => p,
+            Err(_) => continue,
+        };
+        if !canonical_dest.starts_with(&canonical_cache) {
+            continue;
         }
 
         pets.push(PetInfo {
@@ -206,10 +243,24 @@ fn load_codex_builtin_pets() -> Vec<PetInfo> {
             description: format!("Built-in Codex pet ({})", id),
             spritesheet_path: format!("{}.webp", id),
             directory: canonical_cache.to_string_lossy().into_owned(),
-            spritesheet_abs_path: dest.to_string_lossy().into_owned(),
+            spritesheet_abs_path: canonical_dest.to_string_lossy().into_owned(),
         });
     }
     pets
+}
+
+/// Approved roots that `read_pet_image` is allowed to serve bytes from.
+/// Any spritesheet path passed through IPC must canonicalize into one of
+/// these directories.
+pub fn allowed_pet_roots() -> Vec<PathBuf> {
+    let mut roots = Vec::new();
+    if let Some(d) = pets_dir().and_then(|p| p.canonicalize().ok()) {
+        roots.push(d);
+    }
+    if let Some(d) = builtin_cache_dir().and_then(|p| p.canonicalize().ok()) {
+        roots.push(d);
+    }
+    roots
 }
 
 fn builtin_cache_dir() -> Option<PathBuf> {

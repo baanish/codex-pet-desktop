@@ -158,16 +158,32 @@ fn list_pets() -> Vec<types::PetInfo> {
 fn read_pet_image(pet_id: String) -> Result<Vec<u8>, String> {
     // ID-based lookup, not path-based. The renderer is untrusted enough that
     // accepting an arbitrary filesystem path here would make any renderer
-    // injection a "read any file the user can read" primitive. By going
-    // through pet_loader the only readable bytes are spritesheets in the
-    // known pet directories (~/.codex/pets/, the built-in cache, or the
-    // CODEX_PETS_DIR override).
+    // injection a "read any file the user can read" primitive. We go through
+    // pet_loader, then independently revalidate the resolved path against the
+    // allowed roots — even if a TOCTOU race let pet_loader return a path that
+    // points outside (e.g. via a swapped symlink), this final check refuses
+    // to serve bytes.
     let pets = pet_loader::load_pets();
     let Some(pet) = pets.iter().find(|p| p.id == pet_id) else {
         return Err(format!("unknown pet: {}", pet_id));
     };
-    std::fs::read(&pet.spritesheet_abs_path)
-        .map_err(|e| format!("read pet image {}: {}", pet_id, e))
+    let path = std::path::Path::new(&pet.spritesheet_abs_path);
+    let canonical = path
+        .canonicalize()
+        .map_err(|e| format!("canonicalize {}: {}", pet.spritesheet_abs_path, e))?;
+    let allowed = pet_loader::allowed_pet_roots();
+    if !allowed.iter().any(|root| canonical.starts_with(root)) {
+        return Err(format!("pet image outside allowed roots: {}", pet_id));
+    }
+    // symlink_metadata: ensure no link is in the chain (canonicalize already
+    // resolved one, but this catches a symlink at the leaf swapped after
+    // canonicalize and before read).
+    if let Ok(meta) = std::fs::symlink_metadata(&canonical) {
+        if meta.file_type().is_symlink() {
+            return Err(format!("pet image is a symlink: {}", pet_id));
+        }
+    }
+    std::fs::read(&canonical).map_err(|e| format!("read pet image {}: {}", pet_id, e))
 }
 
 pub fn run() {
