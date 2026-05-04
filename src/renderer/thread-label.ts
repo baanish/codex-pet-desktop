@@ -17,7 +17,7 @@ export class ThreadLabel {
     this.labelEl = document.createElement('div')
     this.labelEl.style.cssText = `
       position: absolute;
-      bottom: 100%;
+      top: 0;
       left: 50%;
       transform: translateX(-50%);
       background: rgba(0, 0, 0, 0.8);
@@ -31,9 +31,9 @@ export class ThreadLabel {
       overflow: hidden;
       text-overflow: ellipsis;
       pointer-events: none;
-      margin-bottom: 4px;
       display: none;
       line-height: 1.4;
+      z-index: 10;
     `
     container.appendChild(this.labelEl)
   }
