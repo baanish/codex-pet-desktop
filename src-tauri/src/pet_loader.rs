@@ -32,26 +32,51 @@ fn load_user_pets() -> Vec<PetInfo> {
     let Some(pets_dir) = pets_dir() else {
         return vec![];
     };
-    if !pets_dir.exists() {
+    let Ok(canonical_root) = pets_dir.canonicalize() else {
         return vec![];
-    }
+    };
 
     let mut pets = Vec::new();
-    let entries = match std::fs::read_dir(&pets_dir) {
+    let entries = match std::fs::read_dir(&canonical_root) {
         Ok(e) => e,
         Err(_) => return vec![],
     };
 
     for entry in entries.flatten() {
-        let path = entry.path();
-        if !path.is_dir() {
+        // Reject symlinks at the top level outright; they can point anywhere.
+        let metadata = match entry.metadata() {
+            Ok(m) => m,
+            Err(_) => continue,
+        };
+        if !metadata.is_dir() || metadata.file_type().is_symlink() {
             continue;
         }
-        let json_path = path.join("pet.json");
-        let sprite_path = path.join("spritesheet.webp");
-        if !json_path.exists() || !sprite_path.exists() {
+        let pet_dir = entry.path();
+        let Ok(canonical_pet_dir) = pet_dir.canonicalize() else {
+            continue;
+        };
+        // Defense in depth: even after canonicalize, the dir must still live
+        // under the pet root.
+        if !canonical_pet_dir.starts_with(&canonical_root) {
             continue;
         }
+
+        let json_path = canonical_pet_dir.join("pet.json");
+        let sprite_path = canonical_pet_dir.join("spritesheet.webp");
+        if !json_path.exists() {
+            continue;
+        }
+
+        // Reject symlinked or out-of-tree spritesheets so read_pet_image can't
+        // be tricked into reading e.g. ~/.ssh/id_rsa via a link inside the
+        // pet folder.
+        let Ok(canonical_sprite) = sprite_path.canonicalize() else {
+            continue;
+        };
+        if !canonical_sprite.starts_with(&canonical_pet_dir) {
+            continue;
+        }
+
         let raw = match std::fs::read_to_string(&json_path) {
             Ok(s) => s,
             Err(_) => continue,
@@ -60,17 +85,31 @@ fn load_user_pets() -> Vec<PetInfo> {
             Ok(j) => j,
             Err(_) => continue,
         };
+        if !is_safe_pet_id(&json.id) {
+            continue;
+        }
         pets.push(PetInfo {
             id: json.id,
             display_name: json.display_name,
             description: json.description,
             spritesheet_path: json.spritesheet_path,
-            directory: path.to_string_lossy().into_owned(),
-            spritesheet_abs_path: sprite_path.to_string_lossy().into_owned(),
+            directory: canonical_pet_dir.to_string_lossy().into_owned(),
+            spritesheet_abs_path: canonical_sprite.to_string_lossy().into_owned(),
         });
     }
 
     pets
+}
+
+/// Pet IDs flow into filenames in the cache dir and into IPC; restrict them to
+/// a safe character set so they can never contain `..`, path separators, or
+/// other shell-special characters.
+fn is_safe_pet_id(id: &str) -> bool {
+    !id.is_empty()
+        && id.len() <= 64
+        && id
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
 }
 
 fn codex_asar_path() -> Option<PathBuf> {
@@ -125,6 +164,10 @@ fn load_codex_builtin_pets() -> Vec<PetInfo> {
     // mutably borrow `reader` for read_file calls.
     let entries = list_files(&reader.header);
     let mut pets = Vec::new();
+    let canonical_cache = match cache_dir.canonicalize() {
+        Ok(p) => p,
+        Err(_) => return vec![],
+    };
     for path in entries {
         let Some(file_name) = path.rsplit('/').next() else {
             continue;
@@ -137,9 +180,16 @@ fn load_codex_builtin_pets() -> Vec<PetInfo> {
             Some(id) => id,
             None => continue,
         };
-        let dest = cache_dir.join(format!("{}.webp", id));
+        // The asar header is untrusted input — a malicious archive could try
+        // `../../LaunchAgents/x` as the prefix. is_safe_pet_id forbids dots
+        // and separators so the id can only become a flat filename, but we
+        // still verify the canonical destination stays inside the cache dir
+        // before writing anything.
+        let dest = canonical_cache.join(format!("{}.webp", id));
+        if !dest.parent().is_some_and(|p| p == canonical_cache) {
+            continue;
+        }
 
-        // Extract once, then keep using the cached file.
         if !dest.exists() {
             let bytes = match reader.read_file(&path) {
                 Ok(b) => b,
@@ -155,7 +205,7 @@ fn load_codex_builtin_pets() -> Vec<PetInfo> {
             display_name: pretty_name(&id),
             description: format!("Built-in Codex pet ({})", id),
             spritesheet_path: format!("{}.webp", id),
-            directory: cache_dir.to_string_lossy().into_owned(),
+            directory: canonical_cache.to_string_lossy().into_owned(),
             spritesheet_abs_path: dest.to_string_lossy().into_owned(),
         });
     }
@@ -173,10 +223,18 @@ fn builtin_cache_dir() -> Option<PathBuf> {
 /// Codex bundles spritesheets under stable names with a hash suffix:
 ///   "codex-spritesheet-v4-Bl6P89d_.webp" → "codex"
 ///   "null-signal-spritesheet-v4-CCoTR-8t.webp" → "null-signal"
+///
+/// The asar header is untrusted input. Reject anything that isn't a flat
+/// `[A-Za-z0-9_-]+` token so the id can't carry `..`, `/`, or other
+/// path-traversal payloads into the cache filename.
 fn extract_pet_id(file_name: &str) -> Option<String> {
     const NEEDLE: &str = "-spritesheet-v4-";
     let idx = file_name.find(NEEDLE)?;
-    Some(file_name[..idx].to_string())
+    let candidate = &file_name[..idx];
+    if !is_safe_pet_id(candidate) {
+        return None;
+    }
+    Some(candidate.to_string())
 }
 
 fn pretty_name(id: &str) -> String {
