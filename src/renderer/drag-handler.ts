@@ -57,6 +57,9 @@ export class DragHandler {
 
     // Save final position
     window.petBridge.savePosition({ x: window.screenX, y: window.screenY })
+
+    // Re-poll so animation reverts to idle if nothing is busy
+    this.onInteraction()
   }
 
   destroy() {
