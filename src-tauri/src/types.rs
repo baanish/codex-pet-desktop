@@ -12,7 +12,15 @@ pub struct AppConfig {
     pub text_size: String,
     pub enabled_agents: HashMap<String, bool>,
     pub animation_speeds: HashMap<String, f64>,
+    /// When true, codex processes started in `app-server` mode (i.e. an
+    /// embedded JSON-RPC daemon driven by another tool, not an interactive
+    /// CLI session) are skipped by the codex adapter. Defaults to true since
+    /// users typically only care about sessions they actively started.
+    #[serde(default = "default_true")]
+    pub hide_codex_app_server: bool,
 }
+
+fn default_true() -> bool { true }
 
 impl Default for AppConfig {
     fn default() -> Self {
@@ -30,6 +38,7 @@ impl Default for AppConfig {
             text_size: "medium".into(),
             enabled_agents,
             animation_speeds: HashMap::new(),
+            hide_codex_app_server: true,
         }
     }
 }

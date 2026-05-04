@@ -54,6 +54,51 @@ extern "C" {
     fn kill(pid: i32, sig: i32) -> i32;
 }
 
+/// Same as `find_process_by_name` but also rejects matches whose full
+/// cmd-line contains any of `exclude_cmd_substrings` (case-sensitive). Used
+/// by the codex adapter to optionally hide `codex app-server` daemons that
+/// were spawned by another tool rather than an interactive user session.
+pub fn find_process_by_name_excluding(pattern: &str, exclude_cmd_substrings: &[&str]) -> Option<u32> {
+    use sysinfo::{ProcessRefreshKind, RefreshKind, System};
+    let self_pid = std::process::id();
+    let sys = System::new_with_specifics(
+        RefreshKind::new().with_processes(ProcessRefreshKind::everything()),
+    );
+    for proc_ in sys.processes().values() {
+        let pid = proc_.pid().as_u32();
+        if pid == self_pid {
+            continue;
+        }
+        if process_is_macos_gui_bundle(proc_) {
+            continue;
+        }
+        let cmd_strings: Vec<String> = proc_
+            .cmd()
+            .iter()
+            .map(|s| s.to_string_lossy().into_owned())
+            .collect();
+        let full_cmd = cmd_strings.join(" ");
+        if exclude_cmd_substrings
+            .iter()
+            .any(|needle| full_cmd.contains(needle))
+        {
+            continue;
+        }
+
+        if proc_.name().to_string_lossy() == pattern {
+            return Some(pid);
+        }
+        for arg in &cmd_strings {
+            for component in arg.split(['/', '\\']) {
+                if component == pattern {
+                    return Some(pid);
+                }
+            }
+        }
+    }
+    None
+}
+
 /// Returns the pid of a process whose executable / cmd-line path has a
 /// component exactly equal to `pattern`. Skips:
 ///   - the current process (so `find_process_by_name("codex")` doesn't

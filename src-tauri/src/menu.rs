@@ -243,6 +243,16 @@ fn build_menu<R: Runtime>(
 
     menu.append(&PredefinedMenuItem::separator(app)?)?;
 
+    let hide_app_server = CheckMenuItem::with_id(
+        app,
+        "hide-codex-app-server",
+        "Hide codex app-server sessions",
+        true,
+        cfg.hide_codex_app_server,
+        None::<&str>,
+    )?;
+    menu.append(&hide_app_server)?;
+
     let aot = CheckMenuItem::with_id(
         app,
         "always-on-top",
@@ -348,6 +358,17 @@ fn handle_menu_event<R: Runtime>(app: &AppHandle<R>, id: &str) {
         let cfg = state.config.update(|c| c.always_on_top = !c.always_on_top);
         if let Some(window) = app.get_webview_window("main") {
             let _ = window.set_always_on_top(cfg.always_on_top);
+        }
+    } else if id == "hide-codex-app-server" {
+        let cfg = state.config.update(|c| {
+            c.hide_codex_app_server = !c.hide_codex_app_server;
+        });
+        // Live-mutate the shared switch the codex adapter reads on every
+        // poll. Re-poll right away so the UI reflects the change without
+        // waiting for the next interval.
+        *state.hide_codex_app_server.lock() = cfg.hide_codex_app_server;
+        if let Some(monitor) = state.monitor.lock().as_ref() {
+            monitor.trigger();
         }
     } else if id == "quit" {
         app.exit(0);

@@ -1,6 +1,10 @@
-use super::adapter::{find_process_by_name, now_ms, process_cwd, ThreadAdapter};
+use super::adapter::{
+    find_process_by_name, find_process_by_name_excluding, now_ms, process_cwd, ThreadAdapter,
+};
 use crate::types::{ActiveThread, ThreadStatus};
+use parking_lot::Mutex;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 const BUSY_THRESHOLD_MS: u64 = 10_000;
 const SESSION_DIR_MAX_AGE_SECS: u64 = 3600;
@@ -31,14 +35,21 @@ fn has_recent_codex_session_dir(locks_dir: &Path) -> bool {
 pub struct CodexAdapter {
     codex_dir: PathBuf,
     db_path: PathBuf,
+    /// Shared switch (live-mutated by config updates) controlling whether
+    /// `codex app-server` daemons spawned by other tools are reported.
+    hide_app_server: Arc<Mutex<bool>>,
 }
 
 impl CodexAdapter {
-    pub fn new() -> Self {
+    pub fn new(hide_app_server: Arc<Mutex<bool>>) -> Self {
         let home = dirs::home_dir().unwrap_or_default();
         let codex_dir = home.join(".codex");
         let db_path = codex_dir.join("state_5.sqlite");
-        Self { codex_dir, db_path }
+        Self {
+            codex_dir,
+            db_path,
+            hide_app_server,
+        }
     }
 }
 
@@ -69,7 +80,15 @@ impl ThreadAdapter for CodexAdapter {
         if !has_recent_codex_session_dir(&locks_dir) {
             return vec![];
         }
-        let Some(pid) = find_process_by_name("codex") else {
+        let pid = if *self.hide_app_server.lock() {
+            // Skip codex processes spawned as embedded JSON-RPC daemons
+            // (cmd contains "app-server"); only surface interactive
+            // sessions a human likely started themselves.
+            find_process_by_name_excluding("codex", &["app-server"])
+        } else {
+            find_process_by_name("codex")
+        };
+        let Some(pid) = pid else {
             return vec![];
         };
         let cwd = process_cwd(pid);

@@ -35,6 +35,10 @@ pub struct AppState {
     /// config stays portable across the legacy Electron build and across
     /// multi-monitor layouts where the overlay origin can be negative.
     pub overlay_origin: Mutex<(i32, i32)>,
+    /// Shared with the codex adapter so the menu can flip the
+    /// "hide app-server sessions" filter live without restarting the
+    /// monitor.
+    pub hide_codex_app_server: Arc<Mutex<bool>>,
 }
 
 #[derive(Debug, Clone, Copy, serde::Deserialize)]
@@ -303,10 +307,11 @@ pub fn run() {
 
             // Build monitor wired to emit thread-state events
             let app_handle = app.handle().clone();
+            let hide_codex_app_server = Arc::new(Mutex::new(cfg_initial.hide_codex_app_server));
             let adapters: Vec<Arc<dyn ThreadAdapter>> = vec![
                 Arc::new(OpenCodeAdapter::new()),
                 Arc::new(ClaudeCodeAdapter::new()),
-                Arc::new(CodexAdapter::new()),
+                Arc::new(CodexAdapter::new(hide_codex_app_server.clone())),
             ];
             let monitor = Arc::new(ThreadMonitor::new(adapters, move |threads: Vec<ActiveThread>| {
                 let _ = app_handle.emit("thread-state", &threads);
@@ -328,6 +333,7 @@ pub fn run() {
                 debug_animation: Mutex::new(None),
                 pingpong: Mutex::new(pingpong),
                 overlay_origin: Mutex::new(overlay_origin),
+                hide_codex_app_server,
             };
             app.manage(state);
 
