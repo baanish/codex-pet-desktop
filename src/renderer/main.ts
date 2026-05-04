@@ -105,7 +105,6 @@ async function init() {
   })
 
   window.petBridge.onThreadState((threads: ActiveThread[]) => {
-    console.log('[renderer] threads:', threads.length, threads.map(t => `${t.tool}:${t.status}`).join(', '))
     if (engine) {
       const anim = getHighestPriorityAnimation(threads)
       engine.setAnimation(anim)
