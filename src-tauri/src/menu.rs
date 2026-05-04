@@ -53,8 +53,10 @@ pub fn popup<R: Runtime>(app: &AppHandle<R>) {
         .map(|m| m.list_adapters())
         .unwrap_or_default();
     let pets = crate::pet_loader::load_pets();
+    let debug_anim = state.debug_animation.lock().clone();
+    let pingpong = state.pingpong.lock().clone();
 
-    let menu = match build_menu(app, &cfg, &agents, &pets) {
+    let menu = match build_menu(app, &cfg, &agents, &pets, debug_anim.as_deref(), &pingpong) {
         Ok(m) => m,
         Err(_) => return,
     };
@@ -68,6 +70,8 @@ fn build_menu<R: Runtime>(
     cfg: &crate::types::AppConfig,
     agents: &[(String, String)],
     pets: &[crate::types::PetInfo],
+    debug_anim: Option<&str>,
+    pingpong: &std::collections::HashMap<String, bool>,
 ) -> tauri::Result<Menu<R>> {
     let menu = Menu::new(app)?;
 
@@ -191,14 +195,13 @@ fn build_menu<R: Runtime>(
     // ---------- Ping-pong ----------
     let pingpong_sub = Submenu::new(app, "Ping-pong", true)?;
     for name in ALL_ANIMATIONS {
-        // We don't track current ping-pong state in main config — defaults
-        // shown as informational checkboxes; clicking toggles.
+        let enabled = pingpong.get(*name).copied().unwrap_or_else(|| default_pingpong(name));
         let item = CheckMenuItem::with_id(
             app,
             format!("pingpong:{}", name),
             *name,
             true,
-            default_pingpong(name),
+            enabled,
             None::<&str>,
         )?;
         pingpong_sub.append(&item)?;
@@ -207,7 +210,14 @@ fn build_menu<R: Runtime>(
 
     // ---------- Debug · Animation ----------
     let debug_sub = Submenu::new(app, "Debug · Animation", true)?;
-    let auto = CheckMenuItem::with_id(app, "debuganim:__auto__", "Auto (thread-driven)", true, true, None::<&str>)?;
+    let auto = CheckMenuItem::with_id(
+        app,
+        "debuganim:__auto__",
+        "Auto (thread-driven)",
+        true,
+        debug_anim.is_none(),
+        None::<&str>,
+    )?;
     debug_sub.append(&auto)?;
     debug_sub.append(&PredefinedMenuItem::separator(app)?)?;
     for name in ALL_ANIMATIONS {
@@ -216,7 +226,7 @@ fn build_menu<R: Runtime>(
             format!("debuganim:{}", name),
             *name,
             true,
-            false,
+            debug_anim == Some(*name),
             None::<&str>,
         )?;
         debug_sub.append(&item)?;
@@ -293,10 +303,14 @@ fn handle_menu_event<R: Runtime>(app: &AppHandle<R>, id: &str) {
             monitor.trigger();
         }
     } else if let Some(name) = id.strip_prefix("pingpong:") {
-        // Toggle is informational on the menu; we just ask the renderer to flip
-        // its current state by emitting a "toggle" with no enabled bool so the
-        // renderer reads its current value. Simpler: emit current default.
-        let enabled = !default_pingpong(name);
+        let mut g = state.pingpong.lock();
+        let cur = g
+            .get(name)
+            .copied()
+            .unwrap_or_else(|| default_pingpong(name));
+        let enabled = !cur;
+        g.insert(name.into(), enabled);
+        drop(g);
         let _ = app.emit(
             "pingpong-override",
             serde_json::json!({ "name": name, "enabled": enabled }),
@@ -307,6 +321,7 @@ fn handle_menu_event<R: Runtime>(app: &AppHandle<R>, id: &str) {
         } else {
             Some(name.to_string())
         };
+        *state.debug_animation.lock() = value.clone();
         let _ = app.emit("debug-animation", &value);
     } else if let Some(pet_id) = id.strip_prefix("pet:") {
         if pet_id == "none" {

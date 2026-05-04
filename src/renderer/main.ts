@@ -173,19 +173,16 @@ async function init() {
     engine?.setAnimation(name)
   }
 
-  container.addEventListener('mouseenter', () => {
-    invoke('set_ignore_mouse_events', { ignore: false })
-  })
-
-  container.addEventListener('mouseleave', () => {
-    if (isDragging) return
-    invoke('set_ignore_mouse_events', { ignore: true })
-  })
+  // mouseenter/leave handlers were the Electron approach (with forward:true).
+  // Tauri uses cursor-position polling in Rust instead, so we don't toggle
+  // here — that just races with the polling thread.
 
   container.addEventListener('pointerdown', (e: PointerEvent) => {
-    // Only the primary (left) button initiates a drag. Right/middle buttons
-    // are reserved for the context menu and other interactions.
-    if (e.button !== 0) return
+    // Block right-click and middle-click from starting a drag, but accept any
+    // primary-button-ish event (left mouse, touch, pen). PointerEvent.button
+    // can be -1 for some synthetic events; treating only 1/2 as "blocked"
+    // keeps the common cases working.
+    if (e.button === 1 || e.button === 2) return
     isDragging = true
     invoke('set_dragging', { dragging: true })
     const rect = container.getBoundingClientRect()

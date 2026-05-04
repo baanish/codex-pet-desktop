@@ -1,3 +1,4 @@
+mod asar;
 mod config;
 mod menu;
 mod pet_loader;
@@ -22,6 +23,8 @@ pub struct AppState {
     pub monitor: Mutex<Option<Arc<ThreadMonitor>>>,
     pub pet_bounds: Mutex<Option<PetBounds>>,
     pub is_dragging: Mutex<bool>,
+    pub debug_animation: Mutex<Option<String>>,
+    pub pingpong: Mutex<HashMap<String, bool>>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -195,11 +198,18 @@ pub fn run() {
             monitor.set_interval(cfg_initial.poll_interval_ms);
             monitor.start();
 
+            let pingpong: HashMap<String, bool> = DEFAULT_PINGPONG
+                .iter()
+                .map(|(k, v)| (k.to_string(), *v))
+                .collect();
+
             let state = AppState {
                 config,
                 monitor: Mutex::new(Some(monitor)),
                 pet_bounds: Mutex::new(None),
                 is_dragging: Mutex::new(false),
+                debug_animation: Mutex::new(None),
+                pingpong: Mutex::new(pingpong),
             };
             app.manage(state);
 
@@ -280,7 +290,8 @@ fn set_animation_speed(
 }
 
 #[tauri::command]
-fn set_pingpong(app: AppHandle, name: String, enabled: bool) {
+fn set_pingpong(state: tauri::State<AppState>, app: AppHandle, name: String, enabled: bool) {
+    state.pingpong.lock().insert(name.clone(), enabled);
     let _ = app.emit(
         "pingpong-override",
         serde_json::json!({ "name": name, "enabled": enabled }),
@@ -288,7 +299,8 @@ fn set_pingpong(app: AppHandle, name: String, enabled: bool) {
 }
 
 #[tauri::command]
-fn set_debug_animation(app: AppHandle, name: Option<String>) {
+fn set_debug_animation(state: tauri::State<AppState>, app: AppHandle, name: Option<String>) {
+    *state.debug_animation.lock() = name.clone();
     let _ = app.emit("debug-animation", &name);
 }
 
@@ -307,7 +319,10 @@ fn cursor_polling_loop(app: AppHandle) {
     use std::time::Duration;
     let mut last_state: Option<bool> = None;
     loop {
-        std::thread::sleep(Duration::from_millis(33));
+        // 8ms ≈ 120Hz: keeps the race between cursor-arriving-on-pet and a
+        // user click below human-detectable latency. The thread is otherwise
+        // doing essentially nothing, so this is cheap.
+        std::thread::sleep(Duration::from_millis(8));
         let Some(window) = app.get_webview_window("main") else {
             continue;
         };
