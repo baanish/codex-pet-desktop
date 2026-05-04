@@ -62,18 +62,7 @@ fn load_user_pets() -> Vec<PetInfo> {
         }
 
         let json_path = canonical_pet_dir.join("pet.json");
-        let sprite_path = canonical_pet_dir.join("spritesheet.webp");
         if !json_path.exists() {
-            continue;
-        }
-
-        // Reject symlinked or out-of-tree spritesheets so read_pet_image can't
-        // be tricked into reading e.g. ~/.ssh/id_rsa via a link inside the
-        // pet folder.
-        let Ok(canonical_sprite) = sprite_path.canonicalize() else {
-            continue;
-        };
-        if !canonical_sprite.starts_with(&canonical_pet_dir) {
             continue;
         }
 
@@ -88,6 +77,37 @@ fn load_user_pets() -> Vec<PetInfo> {
         if !is_safe_pet_id(&json.id) {
             continue;
         }
+
+        // Honor the manifest's spritesheetPath (documented in the README) but
+        // refuse any value that's absolute, contains a `..` segment, or
+        // canonicalizes outside the pet directory. read_pet_image
+        // independently rechecks against allowed roots, but stopping a bad
+        // value here means it never even shows up in the menu.
+        let manifest_sprite = std::path::Path::new(&json.spritesheet_path);
+        if manifest_sprite.is_absolute()
+            || manifest_sprite
+                .components()
+                .any(|c| matches!(c, std::path::Component::ParentDir))
+        {
+            continue;
+        }
+        let sprite_path = canonical_pet_dir.join(manifest_sprite);
+
+        // Reject symlinked or out-of-tree spritesheets so read_pet_image can't
+        // be tricked into reading e.g. ~/.ssh/id_rsa via a link inside the
+        // pet folder.
+        let Ok(canonical_sprite) = sprite_path.canonicalize() else {
+            continue;
+        };
+        if !canonical_sprite.starts_with(&canonical_pet_dir) {
+            continue;
+        }
+        if let Ok(meta) = std::fs::symlink_metadata(&canonical_sprite) {
+            if meta.file_type().is_symlink() {
+                continue;
+            }
+        }
+
         pets.push(PetInfo {
             id: json.id,
             display_name: json.display_name,
