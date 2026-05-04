@@ -69,21 +69,28 @@ impl ThreadAdapter for CodexAdapter {
             .ok();
 
         let Some((title, updated_at)) = row else {
+            // Process is alive but no thread row yet; treat as waiting for
+            // input so the user sees the session rather than having it
+            // filtered out as `idle`.
             return vec![ActiveThread {
                 tool: self.id().into(),
-                status: ThreadStatus::Idle,
+                status: ThreadStatus::Waiting,
                 title: None,
             }];
         };
 
-        // updated_at is seconds, like the original
+        // The DB writes are bursty; "fresh" updated_at means the agent is
+        // actively touching the thread, but a stale timestamp does NOT mean
+        // the session is idle in the user-visible sense — codex just hasn't
+        // flushed in a while during a long tool call. So we fall back to
+        // `waiting` (visible, dimmed) instead of `idle` (filtered out).
         let age = now_ms().saturating_sub((updated_at as u64) * 1000);
         vec![ActiveThread {
             tool: self.id().into(),
             status: if age < BUSY_THRESHOLD_MS {
                 ThreadStatus::Busy
             } else {
-                ThreadStatus::Idle
+                ThreadStatus::Waiting
             },
             title,
         }]

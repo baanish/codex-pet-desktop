@@ -49,8 +49,15 @@ You need [Rust](https://rustup.rs/) and Node 18+. Then:
 git clone <repo>
 cd codex-pet-desktop
 npm install
-npm run tauri:build      # produces .app + .dmg under src-tauri/target/release/bundle/
+npm run tauri:build      # produces a bundle for the host platform
 ```
+
+`tauri build` packages whatever targets your host can produce:
+`.app` + `.dmg` on macOS, `.deb` + `.AppImage` + `.rpm` on Linux,
+`.msi` + NSIS `.exe` on Windows. Only macOS has been smoke-tested by
+the maintainer; Linux/Windows builds compile and bundle but you may
+hit platform-specific edges. PRs welcome for verification on those
+platforms.
 
 For local development:
 
