@@ -90,6 +90,7 @@ app.whenReady().then(() => {
   ]
 
   monitor = new ThreadMonitor(adapters, (threads: ActiveThread[]) => {
+    console.log(`[main] sending ${threads.length} threads:`, threads.map(t => `${t.tool}:${t.status}:${t.title}`).join(', '))
     sendToRenderer('thread-state', threads)
   })
 
