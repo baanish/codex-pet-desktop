@@ -9,7 +9,6 @@ export class ThreadMonitor {
   constructor(adapters: ThreadAdapter[], onState: (threads: ActiveThread[]) => void) {
     this.adapters = adapters.filter(a => a.isInstalled())
     this.onState = onState
-    console.log(`[ThreadMonitor] Active adapters: ${this.adapters.map(a => a.id).join(', ')}`)
   }
 
   start(intervalMs: number) {
@@ -18,26 +17,12 @@ export class ThreadMonitor {
         const results = await Promise.allSettled(
           this.adapters.map(a => a.poll())
         )
-
-        for (let i = 0; i < results.length; i++) {
-          const r = results[i]
-          const adapter = this.adapters[i]
-          if (r.status === 'rejected') {
-            console.error(`[ThreadMonitor] ${adapter.id} poll rejected:`, r.reason)
-          }
-        }
-
         const threads = results
           .filter((r): r is PromiseFulfilledResult<ActiveThread[]> => r.status === 'fulfilled')
           .flatMap(r => r.value)
-
-        if (threads.length > 0) {
-          console.log(`[ThreadMonitor] Detected:`, threads.map(t => `${t.tool}:${t.status}:${t.title}`).join(', '))
-        }
-
         this.onState(threads)
-      } catch (err) {
-        console.error('[ThreadMonitor] Poll error:', err)
+      } catch {
+        // Don't crash on poll errors
       }
     }
 
@@ -51,26 +36,12 @@ export class ThreadMonitor {
         const results = await Promise.allSettled(
           this.adapters.map(a => a.poll())
         )
-
-        for (let i = 0; i < results.length; i++) {
-          const r = results[i]
-          const adapter = this.adapters[i]
-          if (r.status === 'rejected') {
-            console.error(`[ThreadMonitor] ${adapter.id} triggerPoll rejected:`, r.reason)
-          }
-        }
-
         const threads = results
           .filter((r): r is PromiseFulfilledResult<ActiveThread[]> => r.status === 'fulfilled')
           .flatMap(r => r.value)
-
-        if (threads.length > 0) {
-          console.log(`[ThreadMonitor] TriggerPoll detected:`, threads.map(t => `${t.tool}:${t.status}:${t.title}`).join(', '))
-        }
-
         this.onState(threads)
-      } catch (err) {
-        console.error('[ThreadMonitor] triggerPoll error:', err)
+      } catch {
+        // Don't crash on poll errors
       }
     }
     poll()
