@@ -23,6 +23,9 @@ export class ThreadLabel {
   private expanded = false
   private threads: ActiveThread[] = []
   private onResize: (() => void) | null
+  /// Per-thread "details revealed" state, keyed by `tool|pid|title`. Click
+  /// toggles. Resets when a thread disappears from the next poll.
+  private revealed = new Set<string>()
 
   constructor(_container: HTMLElement, onResize?: () => void) {
     this.onResize = onResize ?? null
@@ -42,9 +45,10 @@ export class ThreadLabel {
       this.onResize?.()
     })
 
-    // Click a row → copy its PID to clipboard, briefly flash a toast on
-    // the row so the user sees something happened. Stop pointerdown so the
-    // container's drag handler doesn't intercept the click.
+    // Click a row → toggle the cwd / pid detail line. On reveal, also copy
+    // the PID to the clipboard and flash a small toast as confirmation.
+    // pointerdown is stopped so the container's drag handler doesn't
+    // intercept the click.
     this.cardEl.addEventListener('pointerdown', (e) => {
       e.stopPropagation()
     })
@@ -53,10 +57,20 @@ export class ThreadLabel {
       const target = e.target as HTMLElement | null
       const row = target?.closest('.thread-row') as HTMLElement | null
       if (!row) return
+      const key = row.dataset.key
+      if (!key) return
       const pid = row.dataset.pid
-      if (!pid) return
-      navigator.clipboard?.writeText(pid).catch(() => {})
-      this.flashCopied(row, `pid ${pid} copied`)
+      if (this.revealed.has(key)) {
+        this.revealed.delete(key)
+      } else {
+        this.revealed.add(key)
+        if (pid) {
+          navigator.clipboard?.writeText(pid).catch(() => {})
+          this.flashCopied(row, `pid ${pid} copied`)
+        }
+      }
+      this.render()
+      this.onResize?.()
     })
   }
 
@@ -79,7 +93,17 @@ export class ThreadLabel {
       .filter(t => t.status !== 'idle')
       .sort((a, b) => STATUS_PRIORITY[b.status] - STATUS_PRIORITY[a.status])
     if (this.threads.length <= 1) this.expanded = false
+    // Drop "revealed" state for threads that no longer exist so we don't
+    // accumulate dead keys forever.
+    const live = new Set(this.threads.map(t => this.rowKey(t)))
+    for (const k of [...this.revealed]) {
+      if (!live.has(k)) this.revealed.delete(k)
+    }
     this.render()
+  }
+
+  private rowKey(t: ActiveThread): string {
+    return `${t.tool}|${t.pid ?? ''}|${t.title ?? ''}`
   }
 
   private render() {
@@ -115,18 +139,29 @@ export class ThreadLabel {
     const title = t.title?.trim() || 'Untitled thread'
     const subtitle = `${STATUS_WORD[t.status]} · ${t.tool}`
     const staleCls = t.status === 'stale' ? ' stale' : ''
-    const cwd = t.cwd ? this.prettyCwd(t.cwd) : ''
-    const cwdHtml = cwd
-      ? `<div class="thread-cwd" title="${this.esc(t.cwd ?? '')}">${this.esc(cwd)}</div>`
-      : ''
+    const key = this.rowKey(t)
+    const isRevealed = this.revealed.has(key)
+    const isClickable = t.pid != null || (t.cwd && t.cwd.length > 0)
+    const clickableCls = isClickable ? ' clickable' : ''
+
+    let detailsHtml = ''
+    if (isRevealed) {
+      const parts: string[] = []
+      if (t.pid != null) parts.push(`pid ${t.pid}`)
+      if (t.cwd) parts.push(this.prettyCwd(t.cwd))
+      if (parts.length) {
+        const fullCwd = t.cwd ?? ''
+        detailsHtml = `<div class="thread-cwd" title="${this.esc(fullCwd)}">${this.esc(parts.join('  ·  '))}</div>`
+      }
+    }
+
     const pidAttr = t.pid != null ? ` data-pid="${t.pid}"` : ''
-    const clickableCls = t.pid != null ? ' clickable' : ''
     return `
-      <div class="thread-row${staleCls}${clickableCls}"${pidAttr}>
+      <div class="thread-row${staleCls}${clickableCls}" data-key="${this.esc(key)}"${pidAttr}>
         <div class="thread-row-text">
           <div class="thread-title">${this.esc(title)}</div>
           <div class="thread-subtitle">${this.esc(subtitle)}</div>
-          ${cwdHtml}
+          ${detailsHtml}
         </div>
         ${this.statusIconHtml(t.status)}
       </div>
