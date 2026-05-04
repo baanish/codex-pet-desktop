@@ -9,7 +9,7 @@ export const LABEL_HEIGHT = 50
 export function getWindowSize(scale: number) {
   return {
     width: Math.round(BASE_CELL_WIDTH * scale),
-    height: Math.round((BASE_CELL_HEIGHT + LABEL_HEIGHT) * scale)
+    height: Math.round(BASE_CELL_HEIGHT * scale) + Math.round(LABEL_HEIGHT * scale)
   }
 }
 

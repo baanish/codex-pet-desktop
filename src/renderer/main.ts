@@ -53,9 +53,10 @@ function applyScale(scale: number) {
 
   const w = Math.round(BASE_CELL_WIDTH * scale)
   const h = Math.round(BASE_CELL_HEIGHT * scale)
+  const labelH = Math.round(LABEL_HEIGHT * scale)
 
   container.style.width = `${w}px`
-  container.style.height = `${h + LABEL_HEIGHT}px`
+  container.style.height = `${h + labelH}px`
 
   canvas.style.width = `${w}px`
   canvas.style.height = `${h}px`
@@ -64,7 +65,7 @@ function applyScale(scale: number) {
     engine.setScale(scale)
   }
 
-  window.petBridge.setWindowSize(w, h + LABEL_HEIGHT)
+  window.petBridge.setWindowSize(w, h + labelH)
 }
 
 async function init() {
