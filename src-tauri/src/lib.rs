@@ -21,7 +21,11 @@ use types::{ActiveThread, AppConfig, Position};
 pub struct AppState {
     pub config: ConfigStore,
     pub monitor: Mutex<Option<Arc<ThreadMonitor>>>,
-    pub pet_bounds: Mutex<Option<PetBounds>>,
+    /// Discrete hit regions (sprite, card, chevron) reported by the renderer
+    /// in CSS coords relative to the overlay. The cursor poll thread tests
+    /// against each rect individually; transparent gaps between elements
+    /// stay click-through to whatever's underneath.
+    pub pet_regions: Mutex<Vec<PetRegion>>,
     pub is_dragging: Mutex<bool>,
     pub debug_animation: Mutex<Option<String>>,
     pub pingpong: Mutex<HashMap<String, bool>>,
@@ -33,8 +37,8 @@ pub struct AppState {
     pub overlay_origin: Mutex<(i32, i32)>,
 }
 
-#[derive(Debug, Clone, Copy)]
-pub struct PetBounds {
+#[derive(Debug, Clone, Copy, serde::Deserialize)]
+pub struct PetRegion {
     pub x: f64,
     pub y: f64,
     pub w: f64,
@@ -131,8 +135,8 @@ fn set_ignore_mouse_events(window: tauri::WebviewWindow, ignore: bool) {
 }
 
 #[tauri::command]
-fn set_pet_bounds(state: tauri::State<AppState>, x: f64, y: f64, w: f64, h: f64) {
-    *state.pet_bounds.lock() = Some(PetBounds { x, y, w, h });
+fn set_pet_hit_regions(state: tauri::State<AppState>, regions: Vec<PetRegion>) {
+    *state.pet_regions.lock() = regions;
 }
 
 #[tauri::command]
@@ -194,7 +198,7 @@ pub fn run() {
             request_quit,
             list_pets,
             read_pet_image,
-            set_pet_bounds,
+            set_pet_hit_regions,
             set_dragging,
         ])
         .setup(|app| {
@@ -240,7 +244,7 @@ pub fn run() {
             let state = AppState {
                 config,
                 monitor: Mutex::new(Some(monitor)),
-                pet_bounds: Mutex::new(None),
+                pet_regions: Mutex::new(Vec::new()),
                 is_dragging: Mutex::new(false),
                 debug_animation: Mutex::new(None),
                 pingpong: Mutex::new(pingpong),
@@ -389,17 +393,14 @@ fn cursor_polling_loop(app: AppHandle) {
         let cursor_css_x = (cursor.x - inner.x as f64) / scale;
         let cursor_css_y = (cursor.y - inner.y as f64) / scale;
 
-        let bounds = *state.pet_bounds.lock();
-        let in_pet = match bounds {
-            Some(b) => {
-                let pad = 4.0;
-                cursor_css_x >= b.x - pad
-                    && cursor_css_x < b.x + b.w + pad
-                    && cursor_css_y >= b.y - pad
-                    && cursor_css_y < b.y + b.h + pad
-            }
-            None => false,
-        };
+        let regions = state.pet_regions.lock().clone();
+        let pad = 4.0;
+        let in_pet = regions.iter().any(|r| {
+            cursor_css_x >= r.x - pad
+                && cursor_css_x < r.x + r.w + pad
+                && cursor_css_y >= r.y - pad
+                && cursor_css_y < r.y + r.h + pad
+        });
 
         let want_ignore = !in_pet;
         if last_state != Some(want_ignore) {

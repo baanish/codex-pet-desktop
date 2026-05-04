@@ -73,40 +73,29 @@ function positionPet(x: number, y: number) {
 }
 
 function reportBounds() {
-  const container = document.getElementById('pet-container')
-  if (!container) return
-  // Include the absolute-positioned card too, since the card is also clickable.
-  const containerRect = container.getBoundingClientRect()
-  const card = document.getElementById('thread-card')
-  let left = containerRect.left
-  let top = containerRect.top
-  let right = containerRect.right
-  let bottom = containerRect.bottom
-  if (card && card.style.display !== 'none') {
-    const cr = card.getBoundingClientRect()
-    if (cr.width > 0 && cr.height > 0) {
-      left = Math.min(left, cr.left)
-      top = Math.min(top, cr.top)
-      right = Math.max(right, cr.right)
-      bottom = Math.max(bottom, cr.bottom)
-    }
+  // Report each interactive element as its own hit region. The Rust cursor
+  // poller checks each rect individually, so transparent gaps between
+  // sprite/card/chevron stay click-through to whatever's underneath the
+  // overlay instead of getting captured by a union bounding box.
+  const regions: { x: number; y: number; w: number; h: number }[] = []
+  const collect = (id: string, visible?: () => boolean) => {
+    const el = document.getElementById(id)
+    if (!el) return
+    if (visible && !visible()) return
+    const r = el.getBoundingClientRect()
+    if (r.width <= 0 || r.height <= 0) return
+    regions.push({ x: r.left, y: r.top, w: r.width, h: r.height })
   }
-  const chev = document.getElementById('thread-chevron')
-  if (chev && chev.classList.contains('visible')) {
-    const cr = chev.getBoundingClientRect()
-    if (cr.width > 0 && cr.height > 0) {
-      left = Math.min(left, cr.left)
-      top = Math.min(top, cr.top)
-      right = Math.max(right, cr.right)
-      bottom = Math.max(bottom, cr.bottom)
-    }
-  }
-  invoke('set_pet_bounds', {
-    x: left,
-    y: top,
-    w: right - left,
-    h: bottom - top
+  collect('pet-canvas')
+  collect('thread-card', () => {
+    const c = document.getElementById('thread-card')
+    return !!c && c.style.display !== 'none'
   })
+  collect('thread-chevron', () => {
+    const c = document.getElementById('thread-chevron')
+    return !!c && c.classList.contains('visible')
+  })
+  invoke('set_pet_hit_regions', { regions })
 }
 
 async function spritesheetUrl(pet: PetInfo): Promise<string> {

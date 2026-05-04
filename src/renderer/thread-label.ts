@@ -44,8 +44,12 @@ export class ThreadLabel {
   }
 
   update(threads: ActiveThread[]) {
+    // Hide truly-idle threads (per UX request: "only show active threads"),
+    // but keep `stale` visible — stale means the adapter wedged or the
+    // session disappeared, both of which the user should see (rendered
+    // dimmed) rather than have silently disappear.
     this.threads = threads
-      .filter(t => t.status !== 'idle' && t.status !== 'stale')
+      .filter(t => t.status !== 'idle')
       .sort((a, b) => STATUS_PRIORITY[b.status] - STATUS_PRIORITY[a.status])
     if (this.threads.length <= 1) this.expanded = false
     this.render()
