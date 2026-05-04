@@ -175,13 +175,28 @@ fn read_pet_image(pet_id: String) -> Result<Vec<u8>, String> {
     if !allowed.iter().any(|root| canonical.starts_with(root)) {
         return Err(format!("pet image outside allowed roots: {}", pet_id));
     }
-    // symlink_metadata: ensure no link is in the chain (canonicalize already
-    // resolved one, but this catches a symlink at the leaf swapped after
-    // canonicalize and before read).
     if let Ok(meta) = std::fs::symlink_metadata(&canonical) {
         if meta.file_type().is_symlink() {
             return Err(format!("pet image is a symlink: {}", pet_id));
         }
+    }
+    // Bounded read: refuse to allocate gigabytes for a "spritesheet". A
+    // poisoned cache file or a hostile custom pet pointing at a huge regular
+    // file under an allowed root would otherwise OOM the app on every
+    // startup since selectedPetId is persisted.
+    const MAX_SPRITE_BYTES: u64 = 16 * 1024 * 1024;
+    let metadata = std::fs::metadata(&canonical)
+        .map_err(|e| format!("stat pet image {}: {}", pet_id, e))?;
+    if !metadata.is_file() {
+        return Err(format!("pet image is not a regular file: {}", pet_id));
+    }
+    if metadata.len() > MAX_SPRITE_BYTES {
+        return Err(format!(
+            "pet image too large ({} bytes > {} max): {}",
+            metadata.len(),
+            MAX_SPRITE_BYTES,
+            pet_id
+        ));
     }
     std::fs::read(&canonical).map_err(|e| format!("read pet image {}: {}", pet_id, e))
 }

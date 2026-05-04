@@ -11,7 +11,9 @@ pub struct ConfigStore {
 impl ConfigStore {
     pub fn new(user_data_dir: PathBuf) -> Self {
         let path = user_data_dir.join("config.json");
-        let state = Arc::new(Mutex::new(load(&path)));
+        let mut cfg = load(&path);
+        normalize(&mut cfg);
+        let state = Arc::new(Mutex::new(cfg));
         Self { path, state }
     }
 
@@ -20,6 +22,8 @@ impl ConfigStore {
     }
 
     pub fn set(&self, cfg: AppConfig) {
+        let mut cfg = cfg;
+        normalize(&mut cfg);
         *self.state.lock() = cfg;
         self.flush();
     }
@@ -27,6 +31,7 @@ impl ConfigStore {
     pub fn update<F: FnOnce(&mut AppConfig)>(&self, f: F) -> AppConfig {
         let mut g = self.state.lock();
         f(&mut g);
+        normalize(&mut g);
         let cfg = g.clone();
         drop(g);
         self.flush();
@@ -59,6 +64,56 @@ fn load(path: &PathBuf) -> AppConfig {
         }
     }
     AppConfig::default()
+}
+
+/// Clamp / sanitize values that the rest of the app trusts. The persisted
+/// JSON is editable by the user (and shared with the legacy Electron build,
+/// which had its own constraints), so we treat anything we read off disk as
+/// untrusted: a `pollIntervalMs: 0` would otherwise spin the monitor at 100%
+/// CPU, a non-finite scale would NaN-poison the renderer, etc.
+fn normalize(cfg: &mut AppConfig) {
+    if !cfg.scale.is_finite() || cfg.scale <= 0.0 {
+        cfg.scale = 1.0;
+    }
+    cfg.scale = cfg.scale.clamp(0.1, 10.0);
+
+    // Floor at 1s so the polling thread can't tight-loop. 10 minutes is the
+    // documented upper end (the menu offers 10s..120s, but a hand-edited
+    // value somewhere in that range is fine).
+    cfg.poll_interval_ms = cfg.poll_interval_ms.clamp(1_000, 600_000);
+
+    let allowed_text = ["small", "medium", "large", "xlarge"];
+    if !allowed_text.contains(&cfg.text_size.as_str()) {
+        cfg.text_size = "medium".into();
+    }
+
+    if !cfg.position.x.is_finite() {
+        cfg.position.x = 0.0;
+    }
+    if !cfg.position.y.is_finite() {
+        cfg.position.y = 0.0;
+    }
+
+    for (_, v) in cfg.animation_speeds.iter_mut() {
+        if !v.is_finite() || *v <= 0.0 {
+            *v = 1.0;
+        } else {
+            *v = v.clamp(0.1, 10.0);
+        }
+    }
+
+    if let Some(id) = cfg.selected_pet_id.as_deref() {
+        // Same allowlist pet_loader uses; reject ids that could be coerced
+        // into a path traversal further down the line.
+        let safe = !id.is_empty()
+            && id.len() <= 64
+            && id
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-');
+        if !safe {
+            cfg.selected_pet_id = None;
+        }
+    }
 }
 
 fn merge_values(dst: &mut serde_json::Value, src: &serde_json::Value) {
