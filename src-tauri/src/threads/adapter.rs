@@ -55,10 +55,14 @@ extern "C" {
 }
 
 /// Returns the pid of a process whose executable / cmd-line path has a
-/// component exactly equal to `pattern`. The current process is always
-/// excluded — without that guard, calling this with `"codex"` would match
-/// our own `codex-pet-desktop` binary (substring match) and the pet adapter
-/// would happily report itself as live Codex activity.
+/// component exactly equal to `pattern`. Skips:
+///   - the current process (so `find_process_by_name("codex")` doesn't
+///     match `codex-pet-desktop` itself),
+///   - any process whose path lives inside a macOS app bundle
+///     (`/Contents/MacOS/`). This is what was causing detection regressions:
+///     the Codex Electron *GUI* at `/Applications/Codex.app/Contents/MacOS/codex`
+///     was matching `pattern == "codex"` even when no codex CLI was running,
+///     and the adapter would report a phantom session.
 ///
 /// We deliberately avoid shelling out to `pgrep`/`pidof`: subprocesses can
 /// stall (system load, sandbox prompts) and a wedged probe used to freeze
@@ -75,6 +79,10 @@ pub fn find_process_by_name(pattern: &str) -> Option<u32> {
         if pid == self_pid {
             continue;
         }
+        if process_is_macos_gui_bundle(proc_) {
+            continue;
+        }
+
         // Exact match on the executable basename ("codex", "opencode").
         if proc_.name().to_string_lossy() == pattern {
             return Some(pid);
@@ -92,6 +100,23 @@ pub fn find_process_by_name(pattern: &str) -> Option<u32> {
         }
     }
     None
+}
+
+fn process_is_macos_gui_bundle(proc_: &sysinfo::Process) -> bool {
+    let exe_in_bundle = proc_
+        .exe()
+        .map(|p| p.to_string_lossy().contains("/Contents/MacOS/"))
+        .unwrap_or(false);
+    if exe_in_bundle {
+        return true;
+    }
+    // Fall back to argv[0] in case `exe()` isn't populated.
+    if let Some(arg0) = proc_.cmd().first() {
+        if arg0.to_string_lossy().contains("/Contents/MacOS/") {
+            return true;
+        }
+    }
+    false
 }
 
 pub fn now_ms() -> u64 {

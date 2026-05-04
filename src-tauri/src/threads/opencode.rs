@@ -45,11 +45,13 @@ impl ThreadAdapter for OpenCodeAdapter {
         }
 
         if find_process_by_name("opencode").is_none() {
-            return vec![ActiveThread {
-                tool: self.id().into(),
-                status: ThreadStatus::Stale,
-                title: None,
-            }];
+            // No live opencode process → no row. Returning a `Stale` entry
+            // here would surface a row in the card every time the user
+            // exited opencode, which is noise (the user explicitly asked
+            // for "only active threads"). The monitor's stale-replay still
+            // covers the genuinely-degraded case where the adapter itself
+            // wedged.
+            return vec![];
         }
 
         let conn = match rusqlite::Connection::open_with_flags(

@@ -83,21 +83,12 @@ impl ThreadAdapter for ClaudeCodeAdapter {
                 }
             }
 
-            // Recently-updated file with dead pid → stale
-            if let Ok(meta) = std::fs::metadata(&path) {
-                if let Ok(modified) = meta.modified() {
-                    if let Ok(elapsed) = modified.elapsed() {
-                        if elapsed.as_millis() < 60_000 {
-                            active.push(ActiveThread {
-                                tool: self.id().into(),
-                                status: ThreadStatus::Stale,
-                                title: data.name,
-                            });
-                        }
-                    }
-                }
-            }
-            let _ = now_ms; // silence unused-import lint when no branch hits
+            // Dead PID (or PID-reuse-mismatch) → drop the entry entirely
+            // instead of surfacing a `stale` row. The user only wants
+            // active threads; a session JSON whose process exited isn't
+            // active. Adapter-wedge cases are handled by the monitor's
+            // stale-replay separately.
+            let _ = now_ms;
         }
 
         active
