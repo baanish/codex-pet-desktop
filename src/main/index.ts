@@ -114,26 +114,37 @@ app.whenReady().then(() => {
     config!.update({ position })
   })
 
-  ipcMain.on('set-window-position', (_event, x: number, y: number) => {
+  ipcMain.on('set-window-position', (_event, x: unknown, y: unknown) => {
     if (mainWindow && !mainWindow.isDestroyed()) {
-      mainWindow.setPosition(Math.round(x), Math.round(y))
+      const nx = Number(x)
+      const ny = Number(y)
+      if (Number.isFinite(nx) && Number.isFinite(ny)) {
+        mainWindow.setPosition(Math.round(nx), Math.round(ny))
+      }
     }
   })
 
-  ipcMain.on('set-window-size', (_event, width: number, height: number) => {
+  ipcMain.on('set-window-size', (_event, width: unknown, height: unknown) => {
     if (mainWindow && !mainWindow.isDestroyed()) {
-      const [currentX, currentY] = mainWindow.getPosition()
-      mainWindow.setBounds({
-        x: currentX,
-        y: currentY,
-        width: Math.round(width),
-        height: Math.round(height)
-      })
+      const nw = Number(width)
+      const nh = Number(height)
+      if (Number.isFinite(nw) && Number.isFinite(nh) && nw > 0 && nh > 0) {
+        const [currentX, currentY] = mainWindow.getPosition()
+        mainWindow.setBounds({
+          x: currentX,
+          y: currentY,
+          width: Math.round(nw),
+          height: Math.round(nh)
+        })
+      }
     }
   })
 
-  ipcMain.on('save-scale', (_event, scale: number) => {
-    config!.update({ scale })
+  ipcMain.on('save-scale', (_event, scale: unknown) => {
+    const ns = Number(scale)
+    if (Number.isFinite(ns) && ns > 0) {
+      config!.update({ scale: ns })
+    }
   })
 
   ipcMain.on('show-context-menu', () => {
