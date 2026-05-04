@@ -73,11 +73,6 @@ fn load_user_pets() -> Vec<PetInfo> {
     pets
 }
 
-const CODEX_APP_PATHS: &[&str] = &[
-    "/Applications/Codex.app/Contents/Resources/app.asar",
-    // user-installed location
-];
-
 fn codex_asar_path() -> Option<PathBuf> {
     if let Ok(custom) = std::env::var("CODEX_ASAR_PATH") {
         let p = PathBuf::from(custom);
@@ -85,18 +80,26 @@ fn codex_asar_path() -> Option<PathBuf> {
             return Some(p);
         }
     }
-    for candidate in CODEX_APP_PATHS {
-        let p = PathBuf::from(candidate);
-        if p.exists() {
-            return Some(p);
+
+    // Codex.app is shipped as a macOS Electron build; on Linux/Windows the
+    // user has to point CODEX_ASAR_PATH at the right location themselves.
+    #[cfg(target_os = "macos")]
+    {
+        let candidates: &[&str] = &["/Applications/Codex.app/Contents/Resources/app.asar"];
+        for candidate in candidates {
+            let p = PathBuf::from(candidate);
+            if p.exists() {
+                return Some(p);
+            }
+        }
+        if let Some(home) = dirs::home_dir() {
+            let user_app = home.join("Applications/Codex.app/Contents/Resources/app.asar");
+            if user_app.exists() {
+                return Some(user_app);
+            }
         }
     }
-    if let Some(home) = dirs::home_dir() {
-        let user_app = home.join("Applications/Codex.app/Contents/Resources/app.asar");
-        if user_app.exists() {
-            return Some(user_app);
-        }
-    }
+
     None
 }
 
@@ -160,10 +163,11 @@ fn load_codex_builtin_pets() -> Vec<PetInfo> {
 }
 
 fn builtin_cache_dir() -> Option<PathBuf> {
-    if let Some(home) = dirs::home_dir() {
-        return Some(home.join("Library/Caches/codex-pet-desktop/builtin-pets"));
-    }
-    None
+    // dirs::cache_dir() is platform-aware:
+    //   macOS:   ~/Library/Caches
+    //   Linux:   $XDG_CACHE_HOME or ~/.cache
+    //   Windows: %LOCALAPPDATA%
+    Some(dirs::cache_dir()?.join("codex-pet-desktop/builtin-pets"))
 }
 
 /// Codex bundles spritesheets under stable names with a hash suffix:
