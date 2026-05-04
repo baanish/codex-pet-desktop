@@ -1,8 +1,32 @@
 use super::adapter::{find_process_by_name, now_ms, ThreadAdapter};
 use crate::types::{ActiveThread, ThreadStatus};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 const BUSY_THRESHOLD_MS: u64 = 10_000;
+const SESSION_DIR_MAX_AGE_SECS: u64 = 3600;
+
+fn has_recent_codex_session_dir(locks_dir: &Path) -> bool {
+    let Ok(entries) = std::fs::read_dir(locks_dir) else {
+        return false;
+    };
+    for entry in entries.flatten() {
+        if !entry
+            .file_name()
+            .to_string_lossy()
+            .starts_with("codex-")
+        {
+            continue;
+        }
+        let Ok(meta) = entry.metadata() else { continue };
+        let Ok(modified) = meta.modified() else { continue };
+        if let Ok(elapsed) = modified.elapsed() {
+            if elapsed.as_secs() <= SESSION_DIR_MAX_AGE_SECS {
+                return true;
+            }
+        }
+    }
+    false
+}
 
 pub struct CodexAdapter {
     codex_dir: PathBuf,
@@ -32,11 +56,19 @@ impl ThreadAdapter for CodexAdapter {
     }
 
     fn poll(&self) -> Vec<ActiveThread> {
-        // Liveness via sysinfo only — the legacy implementation also tried lsof
-        // on each lockfile under tmp/arg0/codex-*/.lock, but that's a
-        // synchronous shell-out per directory and the monitor loop is
-        // serialized. A blocking `lsof` would freeze every adapter. The
-        // process-name probe is enough to know if codex is currently running.
+        // Two independent liveness signals must both fire:
+        //   (a) at least one ~/.codex/tmp/arg0/codex-*/ session directory
+        //       exists and was touched in the last hour, and
+        //   (b) a process matching "codex" is currently alive.
+        // Either signal alone is too loose: an unrelated process named
+        // `codex` (cycle-8 finding) would otherwise resurrect a stale row,
+        // and a leftover session directory after a crash would otherwise
+        // outlive its session forever. Skip the lsof shell-out (cycle 2);
+        // the directory mtime is enough of a session-level marker.
+        let locks_dir = self.codex_dir.join("tmp/arg0");
+        if !has_recent_codex_session_dir(&locks_dir) {
+            return vec![];
+        }
         if find_process_by_name("codex").is_none() {
             return vec![];
         }

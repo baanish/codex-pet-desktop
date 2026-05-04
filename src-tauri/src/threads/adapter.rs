@@ -22,6 +22,33 @@ pub fn is_pid_alive(pid: u32) -> bool {
     }
 }
 
+/// Returns true if `pid` is alive AND its process name or any cmd-line argument
+/// has a path component containing `name_substr` (case-insensitive). Used to
+/// defend against PID reuse: when a session file recorded `pid=42` for a
+/// dead Claude session and the OS later assigns 42 to an unrelated process,
+/// we reject the stale record instead of treating it as live.
+pub fn is_pid_for_app(pid: u32, name_substr: &str) -> bool {
+    use sysinfo::{Pid, ProcessRefreshKind, RefreshKind, System};
+    let sys = System::new_with_specifics(
+        RefreshKind::new().with_processes(ProcessRefreshKind::everything()),
+    );
+    let Some(proc_) = sys.process(Pid::from_u32(pid)) else {
+        return false;
+    };
+    let needle = name_substr.to_ascii_lowercase();
+    let name = proc_.name().to_string_lossy().to_ascii_lowercase();
+    if name.contains(&needle) {
+        return true;
+    }
+    for arg in proc_.cmd() {
+        let s = arg.to_string_lossy().to_ascii_lowercase();
+        if s.contains(&needle) {
+            return true;
+        }
+    }
+    false
+}
+
 #[cfg(unix)]
 extern "C" {
     fn kill(pid: i32, sig: i32) -> i32;

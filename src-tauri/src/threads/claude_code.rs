@@ -1,4 +1,4 @@
-use super::adapter::{is_pid_alive, now_ms, ThreadAdapter};
+use super::adapter::{is_pid_alive, is_pid_for_app, now_ms, ThreadAdapter};
 use crate::types::{ActiveThread, ThreadStatus};
 use serde::Deserialize;
 use std::path::PathBuf;
@@ -64,7 +64,11 @@ impl ThreadAdapter for ClaudeCodeAdapter {
             };
 
             if let Some(pid) = data.pid {
-                if is_pid_alive(pid) {
+                // PID reuse defense: pid alive alone isn't enough — if Claude
+                // exited and the OS handed pid to an unrelated process, the
+                // session file would otherwise look "live" forever. Confirm
+                // the process is actually a Claude one before trusting it.
+                if is_pid_alive(pid) && is_pid_for_app(pid, "claude") {
                     let status = if data.status.as_deref() == Some("busy") {
                         ThreadStatus::Busy
                     } else {
