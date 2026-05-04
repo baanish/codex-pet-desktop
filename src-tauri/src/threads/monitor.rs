@@ -1,7 +1,7 @@
 use super::adapter::ThreadAdapter;
-use crate::types::ActiveThread;
+use crate::types::{ActiveThread, ThreadStatus};
 use parking_lot::Mutex;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::thread;
 use std::time::{Duration, Instant};
@@ -13,6 +13,14 @@ pub struct ThreadMonitor {
     callback: Arc<dyn Fn(Vec<ActiveThread>) + Send + Sync>,
     wake: Arc<(parking_lot::Mutex<bool>, parking_lot::Condvar)>,
     running: Arc<Mutex<bool>>,
+    // Adapters currently being polled in a worker thread. Used as a
+    // single-flight guard so a wedged adapter cannot accumulate orphan
+    // threads on every interval.
+    in_flight: Arc<Mutex<HashSet<String>>>,
+    // Last successful (or last-emitted) results per adapter. While an adapter
+    // is wedged we keep replaying its previous state so the renderer doesn't
+    // see the thread vanish, and surface a synthetic stale entry instead.
+    last_results: Arc<Mutex<HashMap<String, Vec<ActiveThread>>>>,
 }
 
 impl ThreadMonitor {
@@ -27,6 +35,8 @@ impl ThreadMonitor {
             callback: Arc::new(callback),
             wake: Arc::new((parking_lot::Mutex::new(false), parking_lot::Condvar::new())),
             running: Arc::new(Mutex::new(false)),
+            in_flight: Arc::new(Mutex::new(HashSet::new())),
+            last_results: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 
@@ -95,40 +105,90 @@ impl ThreadMonitor {
     }
 
     fn poll_once(&self) {
-        // Each adapter polls in its own thread with a hard wall-clock budget,
-        // so a wedged sqlite open or filesystem read in one adapter cannot
-        // freeze the monitor and starve the other adapters' state updates.
+        // Each adapter polls in its own worker thread with:
+        //   - a single-flight guard (skip an adapter that's still pending
+        //     from the previous interval — keeps the orphan-thread count
+        //     bounded at <= 1 per adapter regardless of poll cadence),
+        //   - a hard 5-second wall-clock budget across the sweep, so a
+        //     stalled adapter cannot freeze the others, and
+        //   - a stale-replay fallback so the renderer's view of a wedged
+        //     adapter degrades to "previously seen, now stale" instead of
+        //     silently disappearing.
         use std::sync::mpsc;
-        use std::time::{Duration, Instant};
 
         let enabled = self.enabled.lock().clone();
-        let mut receivers: Vec<(String, mpsc::Receiver<Vec<ActiveThread>>)> = vec![];
+        let mut started: Vec<(String, mpsc::Receiver<Vec<ActiveThread>>)> = vec![];
+
         for a in &self.adapters {
-            if let Some(false) = enabled.get(a.id()) {
+            let id = a.id().to_string();
+            if matches!(enabled.get(&id), Some(false)) {
                 continue;
             }
+            // Single-flight: if the previous poll for this adapter hasn't
+            // returned yet, skip launching another. We'll replay last_results
+            // for it below and try again next interval.
+            {
+                let mut g = self.in_flight.lock();
+                if g.contains(&id) {
+                    continue;
+                }
+                g.insert(id.clone());
+            }
+
             let adapter = a.clone();
+            let in_flight = self.in_flight.clone();
+            let last = self.last_results.clone();
+            let id_for_thread = id.clone();
             let (tx, rx) = mpsc::channel();
-            std::thread::spawn(move || {
-                let _ = tx.send(adapter.poll());
+            thread::spawn(move || {
+                let result = adapter.poll();
+                last.lock().insert(id_for_thread.clone(), result.clone());
+                in_flight.lock().remove(&id_for_thread);
+                let _ = tx.send(result);
             });
-            receivers.push((a.id().to_string(), rx));
+            started.push((id, rx));
         }
 
         let deadline = Instant::now() + Duration::from_secs(5);
-        let mut all = Vec::new();
-        for (_id, rx) in receivers {
+        let mut by_adapter: HashMap<String, Vec<ActiveThread>> = HashMap::new();
+        for (id, rx) in started {
             let remaining = deadline.saturating_duration_since(Instant::now());
             match rx.recv_timeout(remaining) {
-                Ok(threads) => all.extend(threads),
+                Ok(threads) => {
+                    by_adapter.insert(id, threads);
+                }
                 Err(_) => {
-                    // Either timed out or the worker thread panicked. Drop
-                    // results for this adapter on this poll; we'll try again
-                    // next interval. The orphaned thread will finish on its
-                    // own and its result will be discarded by the dropped rx.
+                    // Worker still hasn't returned within budget; in_flight
+                    // stays set so we won't spawn another for this adapter
+                    // until it completes.
                 }
             }
         }
+
+        // Build the full state by merging fresh results with replayed
+        // last_results for adapters that didn't return in time. Replayed
+        // entries are downgraded to `stale`.
+        let mut all = Vec::new();
+        let last = self.last_results.lock();
+        for a in &self.adapters {
+            let id = a.id();
+            if matches!(enabled.get(id), Some(false)) {
+                continue;
+            }
+            if let Some(fresh) = by_adapter.remove(id) {
+                all.extend(fresh);
+            } else if let Some(prev) = last.get(id) {
+                for t in prev {
+                    all.push(ActiveThread {
+                        tool: t.tool.clone(),
+                        status: ThreadStatus::Stale,
+                        title: t.title.clone(),
+                    });
+                }
+            }
+        }
+        drop(last);
+
         (self.callback)(all);
     }
 }

@@ -56,6 +56,9 @@ impl ThreadAdapter for CodexAdapter {
             Ok(c) => c,
             Err(_) => return vec![],
         };
+        // If another process holds an exclusive lock, fail fast rather than
+        // spin until the monitor's wall-clock budget elapses.
+        let _ = conn.busy_timeout(std::time::Duration::from_millis(500));
 
         let row: Option<(Option<String>, i64)> = conn
             .query_row(

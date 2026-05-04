@@ -59,6 +59,7 @@ impl ThreadAdapter for OpenCodeAdapter {
             Ok(c) => c,
             Err(_) => return vec![],
         };
+        let _ = conn.busy_timeout(std::time::Duration::from_millis(500));
 
         let row: Option<(Option<String>, i64)> = conn
             .query_row(

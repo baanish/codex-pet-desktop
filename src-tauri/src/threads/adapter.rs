@@ -27,29 +27,41 @@ extern "C" {
     fn kill(pid: i32, sig: i32) -> i32;
 }
 
-/// Returns the first process whose name or command-line contains `pattern`.
+/// Returns the pid of a process whose executable / cmd-line path has a
+/// component exactly equal to `pattern`. The current process is always
+/// excluded — without that guard, calling this with `"codex"` would match
+/// our own `codex-pet-desktop` binary (substring match) and the pet adapter
+/// would happily report itself as live Codex activity.
 ///
 /// We deliberately avoid shelling out to `pgrep`/`pidof`: subprocesses can
-/// stall (e.g., system load, sandbox prompts) and the polling thread serializes
-/// every adapter, so a wedged probe would freeze all state updates. `sysinfo`
-/// reads procfs (Linux) / mach VM info (macOS) / NtQuerySystemInformation
-/// (Windows) directly and returns in bounded, predictable time.
+/// stall (system load, sandbox prompts) and a wedged probe used to freeze
+/// every other adapter. `sysinfo` reads procfs / mach VM info /
+/// NtQuerySystemInformation directly with bounded latency.
 pub fn find_process_by_name(pattern: &str) -> Option<u32> {
     use sysinfo::{ProcessRefreshKind, RefreshKind, System};
+    let self_pid = std::process::id();
     let sys = System::new_with_specifics(
         RefreshKind::new().with_processes(ProcessRefreshKind::everything()),
     );
     for proc_ in sys.processes().values() {
-        let name = proc_.name().to_string_lossy();
-        if name.contains(pattern) {
-            return Some(proc_.pid().as_u32());
+        let pid = proc_.pid().as_u32();
+        if pid == self_pid {
+            continue;
         }
-        let cmd_match = proc_
-            .cmd()
-            .iter()
-            .any(|s| s.to_string_lossy().contains(pattern));
-        if cmd_match {
-            return Some(proc_.pid().as_u32());
+        // Exact match on the executable basename ("codex", "opencode").
+        if proc_.name().to_string_lossy() == pattern {
+            return Some(pid);
+        }
+        // Or any cmd-line argument has a path component exactly equal to
+        // pattern. Matches `/.../node_modules/codex/bin.js` and
+        // `/.../codex/dist/index.js` while rejecting `/.../codex-pet-desktop`.
+        for arg in proc_.cmd() {
+            let s = arg.to_string_lossy();
+            for component in s.split(['/', '\\']) {
+                if component == pattern {
+                    return Some(pid);
+                }
+            }
         }
     }
     None
