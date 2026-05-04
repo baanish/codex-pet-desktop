@@ -3,3 +3,12 @@ dist/
 release/
 *.js.map
 .DS_Store
+
+# Rust / Tauri
+src-tauri/target/
+src-tauri/gen/
+
+# Local environment / artifacts
+.env
+.env.local
+session-*.md

@@ -1,0 +1,37 @@
+[package]
+name = "codex-pet-desktop"
+version = "1.0.0"
+description = "Animated codex pet desktop overlay"
+authors = ["Aanish Bhirud"]
+edition = "2021"
+rust-version = "1.77"
+
+[lib]
+name = "codex_pet_desktop_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = ["macos-private-api", "tray-icon", "protocol-asset"] }
+tauri-plugin-fs = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+rusqlite = { version = "0.32", features = ["bundled"] }
+dirs = "5"
+sysinfo = "0.32"
+parking_lot = "0.12"
+once_cell = "1"
+
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = "0.5"
+objc2-app-kit = { version = "0.2", features = ["NSApplication", "NSWindow", "NSResponder"] }
+objc2-foundation = "0.2"
+
+[profile.release]
+panic = "abort"
+codegen-units = 1
+lto = true
+opt-level = "s"
+strip = true

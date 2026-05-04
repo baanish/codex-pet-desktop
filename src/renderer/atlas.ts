@@ -20,47 +20,52 @@ export const codexPetAtlas: PetSpriteAtlas = {
     idle: {
       row: 0,
       frames: 6,
-      frameDurations: [280, 110, 110, 140, 140, 320]
+      frameDurations: [420, 180, 180, 220, 220, 480],
+      pingpong: true
     },
     'running-right': {
       row: 1,
       frames: 8,
-      frameDurations: [120, 120, 120, 120, 120, 120, 120, 220]
+      frameDurations: [180, 180, 180, 180, 180, 180, 180, 280],
+      pingpong: true
     },
     'running-left': {
       row: 2,
       frames: 8,
-      frameDurations: [120, 120, 120, 120, 120, 120, 120, 220]
+      frameDurations: [180, 180, 180, 180, 180, 180, 180, 280],
+      pingpong: true
     },
     waving: {
       row: 3,
       frames: 4,
-      frameDurations: [140, 140, 140, 280]
+      frameDurations: [220, 220, 220, 380]
     },
     jumping: {
       row: 4,
       frames: 5,
-      frameDurations: [140, 140, 140, 140, 280]
+      frameDurations: [200, 200, 200, 200, 360]
     },
     failed: {
       row: 5,
       frames: 8,
-      frameDurations: [140, 140, 140, 140, 140, 140, 140, 240]
+      frameDurations: [200, 200, 200, 200, 200, 200, 200, 320]
     },
     waiting: {
       row: 6,
       frames: 6,
-      frameDurations: [150, 150, 150, 150, 150, 260]
+      frameDurations: [220, 220, 220, 220, 220, 360],
+      pingpong: true
     },
     running: {
       row: 7,
       frames: 6,
-      frameDurations: [120, 120, 120, 120, 120, 220]
+      frameDurations: [180, 180, 180, 180, 180, 280]
     },
     review: {
       row: 8,
       frames: 6,
-      frameDurations: [150, 150, 150, 150, 150, 280]
+      frameDurations: [220, 220, 220, 220, 220, 360],
+      pingpong: true
     }
   }
 }

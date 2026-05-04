@@ -6,11 +6,13 @@ export class SpriteEngine {
   private image: HTMLImageElement
   private atlas: PetSpriteAtlas
   private currentAnimation: SpriteAnimation | null = null
+  private currentAnimationName = ''
   private currentFrame = 0
-  private elapsedMs = 0
-  private lastTimestamp = 0
+  private direction: 1 | -1 = 1
   private running = false
   private scale = 1
+  private speeds: Record<string, number> = {}
+  private timer: ReturnType<typeof setTimeout> | null = null
 
   constructor(canvas: HTMLCanvasElement, atlas: PetSpriteAtlas) {
     this.canvas = canvas
@@ -20,12 +22,24 @@ export class SpriteEngine {
 
     canvas.width = atlas.cellWidth
     canvas.height = atlas.cellHeight
+    this.disableSmoothing()
+  }
+
+  private disableSmoothing() {
+    this.ctx.imageSmoothingEnabled = false
+    ;(this.ctx as any).webkitImageSmoothingEnabled = false
+    ;(this.ctx as any).mozImageSmoothingEnabled = false
   }
 
   setScale(scale: number) {
     this.scale = scale
+    // Keep the drawing buffer at full source resolution; scale via CSS so
+    // image-rendering: pixelated handles the downsample without bilinear blur.
+    this.canvas.width = this.atlas.cellWidth
+    this.canvas.height = this.atlas.cellHeight
     this.canvas.style.width = `${Math.round(this.atlas.cellWidth * scale)}px`
     this.canvas.style.height = `${Math.round(this.atlas.cellHeight * scale)}px`
+    this.disableSmoothing()
   }
 
   loadSpritesheet(src: string): Promise<void> {
@@ -42,41 +56,72 @@ export class SpriteEngine {
     if (this.currentAnimation === anim) return
 
     this.currentAnimation = anim
+    this.currentAnimationName = name
     this.currentFrame = 0
-    this.elapsedMs = 0
+    this.direction = 1
+
+    if (this.running) {
+      this.draw()
+      this.scheduleNext()
+    }
+  }
+
+  setAnimationSpeed(name: string, speed: number) {
+    this.speeds[name] = speed
+  }
+
+  private effectiveDuration(): number {
+    const anim = this.currentAnimation!
+    const base = anim.frameDurations[this.currentFrame]
+    const speed = this.speeds[this.currentAnimationName] ?? 1
+    return speed > 0 ? base / speed : base
   }
 
   start() {
     if (this.running) return
     this.running = true
-    this.lastTimestamp = performance.now()
-    this.tick()
+    if (this.currentAnimation) this.draw()
+    this.scheduleNext()
   }
 
   stop() {
     this.running = false
+    if (this.timer) {
+      clearTimeout(this.timer)
+      this.timer = null
+    }
   }
 
-  private tick = () => {
-    if (!this.running) return
-
-    const now = performance.now()
-    const delta = now - this.lastTimestamp
-    this.lastTimestamp = now
-
-    this.elapsedMs += delta
-
-    if (this.currentAnimation) {
-      const frameDuration = this.currentAnimation.frameDurations[this.currentFrame]
-      if (this.elapsedMs >= frameDuration) {
-        this.elapsedMs -= frameDuration
-        this.currentFrame = (this.currentFrame + 1) % this.currentAnimation.frames
-      }
-
+  // Wake only at frame-change boundaries instead of running a 60Hz rAF loop.
+  // Pet frames last 180–480ms, so this drops idle CPU/GPU dramatically.
+  private scheduleNext() {
+    if (this.timer) clearTimeout(this.timer)
+    if (!this.running || !this.currentAnimation) return
+    const wait = Math.max(16, this.effectiveDuration())
+    this.timer = setTimeout(() => {
+      if (!this.running || !this.currentAnimation) return
+      this.advanceFrame()
       this.draw()
-    }
+      this.scheduleNext()
+    }, wait)
+  }
 
-    requestAnimationFrame(this.tick)
+  private advanceFrame() {
+    const anim = this.currentAnimation!
+    if (!anim.pingpong) {
+      this.currentFrame = (this.currentFrame + 1) % anim.frames
+      return
+    }
+    // Ping-pong: 0 → frames-1 → 0 → ... bouncing without holding endpoints.
+    let next = this.currentFrame + this.direction
+    if (next >= anim.frames) {
+      next = anim.frames - 2
+      this.direction = -1
+    } else if (next < 0) {
+      next = 1
+      this.direction = 1
+    }
+    this.currentFrame = Math.max(0, Math.min(anim.frames - 1, next))
   }
 
   private draw() {
@@ -96,8 +141,8 @@ export class SpriteEngine {
       cellHeight,
       0,
       0,
-      cellWidth,
-      cellHeight
+      this.canvas.width,
+      this.canvas.height
     )
   }
 }

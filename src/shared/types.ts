@@ -14,6 +14,7 @@ export interface SpriteAnimation {
   row: number
   frames: number
   frameDurations: number[]
+  pingpong?: boolean
 }
 
 export interface PetSpriteAtlas {
@@ -36,12 +37,17 @@ export interface AppState {
   activeThreads: ActiveThread[]
 }
 
+export type TextSize = 'small' | 'medium' | 'large' | 'xlarge'
+
 export interface AppConfig {
   selectedPetId: string | null
   position: { x: number; y: number }
   scale: number
   alwaysOnTop: boolean
   pollIntervalMs: number
+  textSize: TextSize
+  enabledAgents: Record<string, boolean>
+  animationSpeeds: Record<string, number>
 }
 
 export const DEFAULT_CONFIG: AppConfig = {
@@ -49,5 +55,12 @@ export const DEFAULT_CONFIG: AppConfig = {
   position: { x: 0, y: 0 },
   scale: 1,
   alwaysOnTop: true,
-  pollIntervalMs: 30000
+  pollIntervalMs: 30000,
+  textSize: 'medium',
+  enabledAgents: {
+    opencode: true,
+    'claude-code': true,
+    codex: true
+  },
+  animationSpeeds: {}
 }
