@@ -95,14 +95,39 @@ impl ThreadMonitor {
     }
 
     fn poll_once(&self) {
+        // Each adapter polls in its own thread with a hard wall-clock budget,
+        // so a wedged sqlite open or filesystem read in one adapter cannot
+        // freeze the monitor and starve the other adapters' state updates.
+        use std::sync::mpsc;
+        use std::time::{Duration, Instant};
+
         let enabled = self.enabled.lock().clone();
-        let mut all = Vec::new();
+        let mut receivers: Vec<(String, mpsc::Receiver<Vec<ActiveThread>>)> = vec![];
         for a in &self.adapters {
             if let Some(false) = enabled.get(a.id()) {
                 continue;
             }
-            let mut threads = a.poll();
-            all.append(&mut threads);
+            let adapter = a.clone();
+            let (tx, rx) = mpsc::channel();
+            std::thread::spawn(move || {
+                let _ = tx.send(adapter.poll());
+            });
+            receivers.push((a.id().to_string(), rx));
+        }
+
+        let deadline = Instant::now() + Duration::from_secs(5);
+        let mut all = Vec::new();
+        for (_id, rx) in receivers {
+            let remaining = deadline.saturating_duration_since(Instant::now());
+            match rx.recv_timeout(remaining) {
+                Ok(threads) => all.extend(threads),
+                Err(_) => {
+                    // Either timed out or the worker thread panicked. Drop
+                    // results for this adapter on this poll; we'll try again
+                    // next interval. The orphaned thread will finish on its
+                    // own and its result will be discarded by the dropped rx.
+                }
+            }
         }
         (self.callback)(all);
     }

@@ -3,19 +3,40 @@ use tauri::{
 };
 
 pub fn create_pet_window(app: &AppHandle) -> tauri::Result<WebviewWindow> {
-    // Determine display bounds before creating the window.
-    let monitor = app
-        .primary_monitor()?
-        .or_else(|| app.available_monitors().ok().and_then(|v| v.into_iter().next()))
-        .expect("no monitor available");
+    // Compute the bounding box of every connected monitor. The overlay needs
+    // to span the full virtual desktop so the user can drop the pet on any
+    // display, not just the primary one.
+    let monitors = app.available_monitors().unwrap_or_default();
+    let mut min_x = i32::MAX;
+    let mut min_y = i32::MAX;
+    let mut max_x = i32::MIN;
+    let mut max_y = i32::MIN;
+    for m in &monitors {
+        let pos = m.position();
+        let size = m.size();
+        min_x = min_x.min(pos.x);
+        min_y = min_y.min(pos.y);
+        max_x = max_x.max(pos.x + size.width as i32);
+        max_y = max_y.max(pos.y + size.height as i32);
+    }
+    if monitors.is_empty() {
+        // No monitors enumerated yet (rare); fall back to primary so we still
+        // get *something* on screen.
+        let primary = app
+            .primary_monitor()?
+            .expect("no monitor available");
+        let pos = primary.position();
+        let size = primary.size();
+        min_x = pos.x;
+        min_y = pos.y;
+        max_x = pos.x + size.width as i32;
+        max_y = pos.y + size.height as i32;
+    }
 
-    let size = monitor.size();
-    let position = monitor.position();
-
-    let oversized_w = size.width as i32 + 200;
-    let oversized_h = size.height as i32 + 200;
-    let target_x = position.x - 100;
-    let target_y = position.y - 100;
+    let oversized_w = (max_x - min_x) + 200;
+    let oversized_h = (max_y - min_y) + 200;
+    let target_x = min_x - 100;
+    let target_y = min_y - 100;
 
     // DEV MODE: smaller decorated window so we can see whether the renderer
     // loaded. Will be turned back into a transparent overlay once the JS side

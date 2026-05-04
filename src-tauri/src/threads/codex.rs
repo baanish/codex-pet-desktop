@@ -1,4 +1,4 @@
-use super::adapter::{find_process_by_name, is_lock_held_by_process, now_ms, ThreadAdapter};
+use super::adapter::{find_process_by_name, now_ms, ThreadAdapter};
 use crate::types::{ActiveThread, ThreadStatus};
 use std::path::PathBuf;
 
@@ -32,36 +32,14 @@ impl ThreadAdapter for CodexAdapter {
     }
 
     fn poll(&self) -> Vec<ActiveThread> {
-        let locks_dir = self.codex_dir.join("tmp/arg0");
-        if !locks_dir.exists() {
+        // Liveness via sysinfo only — the legacy implementation also tried lsof
+        // on each lockfile under tmp/arg0/codex-*/.lock, but that's a
+        // synchronous shell-out per directory and the monitor loop is
+        // serialized. A blocking `lsof` would freeze every adapter. The
+        // process-name probe is enough to know if codex is currently running.
+        if find_process_by_name("codex").is_none() {
             return vec![];
         }
-
-        let mut has_live_lock = false;
-        if let Ok(entries) = std::fs::read_dir(&locks_dir) {
-            for entry in entries.flatten() {
-                if !entry
-                    .file_name()
-                    .to_string_lossy()
-                    .starts_with("codex-")
-                {
-                    continue;
-                }
-                let lock_file = entry.path().join(".lock");
-                if lock_file.exists() && is_lock_held_by_process(&lock_file.to_string_lossy()) {
-                    has_live_lock = true;
-                    break;
-                }
-            }
-        }
-
-        if !has_live_lock {
-            if find_process_by_name("codex").is_none() {
-                return vec![];
-            }
-            has_live_lock = true;
-        }
-        let _ = has_live_lock;
 
         if !self.db_path.exists() {
             return vec![ActiveThread {
