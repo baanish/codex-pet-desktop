@@ -11,6 +11,8 @@ const STATUS_PRIORITY: Record<ThreadStatus, number> = {
 export class ThreadLabel {
   private container: HTMLElement
   private labelEl: HTMLElement
+  private expanded = false
+  private threads: ActiveThread[] = []
 
   constructor(container: HTMLElement) {
     this.container = container
@@ -26,35 +28,47 @@ export class ThreadLabel {
       font-size: 11px;
       padding: 4px 8px;
       border-radius: 6px;
-      white-space: nowrap;
-      max-width: 250px;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      pointer-events: none;
+      pointer-events: auto;
+      cursor: pointer;
       display: none;
       line-height: 1.4;
       z-index: 10;
+      user-select: none;
     `
+    this.labelEl.addEventListener('click', (e) => {
+      e.stopPropagation()
+      this.expanded = !this.expanded
+      this.render()
+    })
     container.appendChild(this.labelEl)
   }
 
   update(threads: ActiveThread[]) {
-    if (threads.length === 0) {
+    this.threads = [...threads].sort(
+      (a, b) => STATUS_PRIORITY[b.status] - STATUS_PRIORITY[a.status]
+    )
+    this.render()
+  }
+
+  private render() {
+    if (this.threads.length === 0) {
       this.labelEl.style.display = 'none'
       return
     }
 
-    const sorted = [...threads].sort(
-      (a, b) => STATUS_PRIORITY[b.status] - STATUS_PRIORITY[a.status]
-    )
+    const lines = this.expanded ? this.threads : [this.threads[0]]
 
-    const lines = sorted.map(t => {
+    const html = lines.map(t => {
       const title = t.title ?? 'untitled'
       const opacity = t.status === 'stale' ? '0.5' : '1'
-      return `<div style="opacity: ${opacity}">${this.escapeHtml(t.tool)} — ${this.escapeHtml(title)}</div>`
-    })
+      return `<div style="opacity: ${opacity}; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 250px;">${this.escapeHtml(t.tool)} — ${this.escapeHtml(title)}</div>`
+    }).join('')
 
-    this.labelEl.innerHTML = lines.join('')
+    const indicator = this.threads.length > 1
+      ? `<div style="text-align: center; font-size: 9px; opacity: 0.6; margin-top: 2px;">${this.expanded ? '▲' : '▼'}</div>`
+      : ''
+
+    this.labelEl.innerHTML = html + indicator
     this.labelEl.style.display = 'block'
   }
 
