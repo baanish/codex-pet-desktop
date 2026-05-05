@@ -26,7 +26,7 @@ const ALL_ANIMATIONS: &[&str] = &[
     "review",
 ];
 
-const SPEED_CHOICES: &[f64] = &[0.5, 0.75, 1.0, 1.5, 2.0, 3.0];
+const SPEED_CHOICES: &[f64] = &[0.25, 0.33, 0.5, 0.75, 1.0, 1.5, 2.0, 3.0];
 const TEXT_SIZES: &[(&str, &str)] = &[
     ("Small", "small"),
     ("Medium", "medium"),
@@ -34,6 +34,8 @@ const TEXT_SIZES: &[(&str, &str)] = &[
     ("Extra Large", "xlarge"),
 ];
 const SCALE_CHOICES: &[(&str, f64)] = &[
+    ("25%", 0.25),
+    ("33%", 0.33),
     ("50%", 0.5),
     ("75%", 0.75),
     ("100%", 1.0),

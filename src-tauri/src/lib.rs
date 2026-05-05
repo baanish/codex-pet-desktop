@@ -134,6 +134,13 @@ fn trigger_poll(state: tauri::State<AppState>) {
 }
 
 #[tauri::command]
+fn dismiss_thread(state: tauri::State<AppState>, thread: ActiveThread) {
+    if let Some(monitor) = state.monitor.lock().as_ref() {
+        monitor.dismiss_thread(thread);
+    }
+}
+
+#[tauri::command]
 fn set_ignore_mouse_events(window: tauri::WebviewWindow, ignore: bool) {
     let _ = window.set_ignore_cursor_events(ignore);
 }
@@ -269,6 +276,7 @@ pub fn run() {
             save_position,
             save_scale,
             trigger_poll,
+            dismiss_thread,
             set_ignore_mouse_events,
             show_context_menu,
             set_text_size,

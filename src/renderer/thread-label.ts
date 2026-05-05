@@ -1,3 +1,4 @@
+import { invoke } from '@tauri-apps/api/core'
 import { ActiveThread, ThreadStatus } from '../shared/types'
 
 const STATUS_PRIORITY: Record<ThreadStatus, number> = {
@@ -23,7 +24,7 @@ export class ThreadLabel {
   private expanded = false
   private threads: ActiveThread[] = []
   private onResize: (() => void) | null
-  /// Per-thread "details revealed" state, keyed by `tool|pid|title`. Click
+  /// Per-thread "details revealed" state, keyed by `tool|pid|cwd|title`. Click
   /// toggles. Resets when a thread disappears from the next poll.
   private revealed = new Set<string>()
 
@@ -55,6 +56,19 @@ export class ThreadLabel {
     this.cardEl.addEventListener('click', (e) => {
       e.stopPropagation()
       const target = e.target as HTMLElement | null
+      const dismiss = target?.closest('.thread-dismiss') as HTMLElement | null
+      if (dismiss) {
+        const key = dismiss.dataset.key
+        const thread = this.threads.find(t => this.rowKey(t) === key)
+        if (thread && this.isDismissible(thread)) {
+          this.threads = this.threads.filter(t => this.rowKey(t) !== key)
+          this.revealed.delete(key!)
+          invoke('dismiss_thread', { thread }).catch(() => {})
+          this.render()
+          this.onResize?.()
+        }
+        return
+      }
       const row = target?.closest('.thread-row') as HTMLElement | null
       if (!row) return
       const key = row.dataset.key
@@ -103,7 +117,7 @@ export class ThreadLabel {
   }
 
   private rowKey(t: ActiveThread): string {
-    return `${t.tool}|${t.pid ?? ''}|${t.title ?? ''}`
+    return `${t.tool}|${t.pid ?? ''}|${t.cwd ?? ''}|${t.title ?? ''}`
   }
 
   private render() {
@@ -143,6 +157,9 @@ export class ThreadLabel {
     const isRevealed = this.revealed.has(key)
     const isClickable = t.pid != null || (t.cwd && t.cwd.length > 0)
     const clickableCls = isClickable ? ' clickable' : ''
+    const dismissHtml = this.isDismissible(t)
+      ? `<button class="thread-dismiss" type="button" title="Dismiss thread" aria-label="Dismiss thread" data-key="${this.esc(key)}">&times;</button>`
+      : ''
 
     let detailsHtml = ''
     if (isRevealed) {
@@ -164,8 +181,13 @@ export class ThreadLabel {
           ${detailsHtml}
         </div>
         ${this.statusIconHtml(t.status)}
+        ${dismissHtml}
       </div>
     `
+  }
+
+  private isDismissible(t: ActiveThread): boolean {
+    return t.status !== 'busy'
   }
 
   /// Replace $HOME with ~ so cwd lines stay short. Also collapse extremely

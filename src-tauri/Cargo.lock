@@ -335,7 +335,7 @@ dependencies = [
 
 [[package]]
 name = "codex-pet-desktop"
-version = "1.1.0"
+version = "1.3.0"
 dependencies = [
  "dirs 5.0.1",
  "objc2 0.5.2",

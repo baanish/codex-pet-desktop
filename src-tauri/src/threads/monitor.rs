@@ -21,6 +21,11 @@ pub struct ThreadMonitor {
     // is wedged we keep replaying its previous state so the renderer doesn't
     // see the thread vanish, and surface a synthetic stale entry instead.
     last_results: Arc<Mutex<HashMap<String, Vec<ActiveThread>>>>,
+    // Runtime-only dismissals. Keys are pruned as soon as the corresponding
+    // thread is no longer detected so a future, unrelated session cannot
+    // inherit a stale hidden state.
+    dismissed: Arc<Mutex<HashSet<String>>>,
+    last_detected: Arc<Mutex<Vec<ActiveThread>>>,
 }
 
 impl ThreadMonitor {
@@ -37,6 +42,8 @@ impl ThreadMonitor {
             running: Arc::new(Mutex::new(false)),
             in_flight: Arc::new(Mutex::new(HashSet::new())),
             last_results: Arc::new(Mutex::new(HashMap::new())),
+            dismissed: Arc::new(Mutex::new(HashSet::new())),
+            last_detected: Arc::new(Mutex::new(Vec::new())),
         }
     }
 
@@ -58,6 +65,15 @@ impl ThreadMonitor {
 
     pub fn trigger(&self) {
         self.wake_now();
+    }
+
+    pub fn dismiss_thread(&self, thread: ActiveThread) {
+        if !is_dismissible(&thread) {
+            return;
+        }
+        self.dismissed.lock().insert(thread_key(&thread));
+        let visible = self.filter_dismissed(self.last_detected.lock().clone());
+        (self.callback)(visible);
     }
 
     fn wake_now(&self) {
@@ -191,6 +207,86 @@ impl ThreadMonitor {
         }
         drop(last);
 
-        (self.callback)(all);
+        *self.last_detected.lock() = all.clone();
+        let visible = self.filter_dismissed(all);
+        (self.callback)(visible);
+    }
+
+    fn filter_dismissed(&self, threads: Vec<ActiveThread>) -> Vec<ActiveThread> {
+        let live_keys: HashSet<String> = threads.iter().map(thread_key).collect();
+        let mut dismissed = self.dismissed.lock();
+        dismissed.retain(|key| live_keys.contains(key));
+        threads
+            .into_iter()
+            .filter(|thread| !dismissed.contains(&thread_key(thread)))
+            .collect()
+    }
+}
+
+fn is_dismissible(thread: &ActiveThread) -> bool {
+    !matches!(thread.status, ThreadStatus::Busy)
+}
+
+fn thread_key(thread: &ActiveThread) -> String {
+    format!(
+        "{}\n{}\n{}\n{}",
+        thread.tool,
+        thread.pid.map(|pid| pid.to_string()).unwrap_or_default(),
+        thread.cwd.as_deref().unwrap_or_default(),
+        thread.title.as_deref().unwrap_or_default()
+    )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn thread(status: ThreadStatus, pid: Option<u32>, title: &str) -> ActiveThread {
+        ActiveThread {
+            tool: "codex".into(),
+            status,
+            title: Some(title.into()),
+            cwd: Some("/tmp/project".into()),
+            pid,
+        }
+    }
+
+    #[test]
+    fn only_non_busy_threads_can_be_dismissed() {
+        assert!(!is_dismissible(&thread(
+            ThreadStatus::Busy,
+            Some(1),
+            "work"
+        )));
+        assert!(is_dismissible(&thread(
+            ThreadStatus::Waiting,
+            Some(1),
+            "work"
+        )));
+        assert!(is_dismissible(&thread(
+            ThreadStatus::Error,
+            Some(1),
+            "work"
+        )));
+        assert!(is_dismissible(&thread(ThreadStatus::Idle, Some(1), "work")));
+        assert!(is_dismissible(&thread(
+            ThreadStatus::Stale,
+            Some(1),
+            "work"
+        )));
+    }
+
+    #[test]
+    fn dismissed_keys_are_pruned_when_threads_fall_out_of_detection() {
+        let monitor = ThreadMonitor::new(Vec::new(), |_| {});
+        let first = thread(ThreadStatus::Waiting, Some(10), "old");
+        let second = thread(ThreadStatus::Waiting, Some(11), "new");
+        monitor.dismissed.lock().insert(thread_key(&first));
+
+        let visible = monitor.filter_dismissed(vec![second.clone()]);
+
+        assert_eq!(visible.len(), 1);
+        assert_eq!(visible[0].pid, Some(11));
+        assert!(monitor.dismissed.lock().is_empty());
     }
 }

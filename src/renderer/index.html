@@ -136,6 +136,23 @@
     .thread-status-icon.dot.error { background: #ff5a52; }
     .thread-status-icon.dot.waiting { background: #ffbd2e; }
     .thread-status-icon.dot.idle { background: rgba(255, 255, 255, 0.25); }
+    .thread-dismiss {
+      width: 16px;
+      height: 16px;
+      flex: 0 0 16px;
+      border: 0;
+      border-radius: 50%;
+      background: rgba(255, 255, 255, 0.08);
+      color: rgba(255, 255, 255, 0.62);
+      font: 13px/16px -apple-system, BlinkMacSystemFont, 'SF Pro Text', system-ui, sans-serif;
+      text-align: center;
+      cursor: pointer;
+      padding: 0;
+    }
+    .thread-dismiss:hover {
+      background: rgba(255, 255, 255, 0.16);
+      color: rgba(255, 255, 255, 0.95);
+    }
     @keyframes pet-spin {
       to { transform: rotate(360deg); }
     }

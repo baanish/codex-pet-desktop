@@ -189,11 +189,11 @@ Animations can be ping-ponged (forward → reverse → forward) per-animation fr
 ## Right-click menu
 
 - **Pet** — switch between installed pets.
-- **Size** — sprite scale (50% → 300%).
+- **Size** — sprite scale (25% → 300%).
 - **Text Size** — card title/subtitle font size.
 - **Poll Interval** — how often to re-check agent state (10s–120s).
 - **Agents** — enable / disable each adapter individually.
-- **Animation Speed** — per-animation playback multiplier (0.5× – 3×).
+- **Animation Speed** — per-animation playback multiplier (0.25× – 3×).
 - **Ping-pong** — toggle per-animation forward / yoyo loop.
 - **Debug · Animation** — manually pin the sprite to one animation for
   testing; choose **Auto (thread-driven)** to return to normal behavior.

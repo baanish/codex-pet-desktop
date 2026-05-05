@@ -235,7 +235,7 @@ async function init() {
   container.addEventListener('wheel', (e: WheelEvent) => {
     e.preventDefault()
     const delta = e.deltaY > 0 ? -0.1 : 0.1
-    const newScale = Math.max(0.5, Math.min(3, currentScale + delta))
+    const newScale = Math.max(0.25, Math.min(3, currentScale + delta))
     if (newScale !== currentScale) {
       applyScale(newScale)
       invoke('save_scale', { scale: newScale })
