@@ -150,14 +150,16 @@ export class ThreadLabel {
   }
 
   private rowHtml(t: ActiveThread): string {
-    const title = t.title?.trim() || 'Untitled thread'
+    const title = this.displayTitle(t)
     const subtitle = `${STATUS_WORD[t.status]} · ${t.tool}`
     const staleCls = t.status === 'stale' ? ' stale' : ''
     const key = this.rowKey(t)
     const isRevealed = this.revealed.has(key)
     const isClickable = t.pid != null || (t.cwd && t.cwd.length > 0)
     const clickableCls = isClickable ? ' clickable' : ''
-    const dismissHtml = this.isDismissible(t)
+    const isDismissible = this.isDismissible(t)
+    const statusHtml = isDismissible ? '' : this.statusIconHtml(t.status)
+    const dismissHtml = isDismissible
       ? `<button class="thread-dismiss" type="button" title="Dismiss thread" aria-label="Dismiss thread" data-key="${this.esc(key)}">&times;</button>`
       : ''
 
@@ -180,7 +182,7 @@ export class ThreadLabel {
           <div class="thread-subtitle">${this.esc(subtitle)}</div>
           ${detailsHtml}
         </div>
-        ${this.statusIconHtml(t.status)}
+        ${statusHtml}
         ${dismissHtml}
       </div>
     `
@@ -188,6 +190,10 @@ export class ThreadLabel {
 
   private isDismissible(t: ActiveThread): boolean {
     return t.status !== 'busy'
+  }
+
+  private displayTitle(t: ActiveThread): string {
+    return (t.title?.trim() || 'Untitled thread').replace(/^#{1,6}\s+/, '')
   }
 
   /// Replace $HOME with ~ so cwd lines stay short. Also collapse extremely
