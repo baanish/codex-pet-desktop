@@ -27,6 +27,9 @@ export class ThreadLabel {
   /// Per-thread "details revealed" state, keyed by `tool|pid|cwd|title`. Click
   /// toggles. Resets when a thread disappears from the next poll.
   private revealed = new Set<string>()
+  // Mirror backend runtime dismissals in the renderer so an in-flight
+  // thread-state event cannot immediately redraw a just-dismissed row.
+  private dismissed = new Set<string>()
 
   constructor(_container: HTMLElement, onResize?: () => void) {
     this.onResize = onResize ?? null
@@ -61,6 +64,7 @@ export class ThreadLabel {
         const key = dismiss.dataset.key
         const thread = this.threads.find(t => this.rowKey(t) === key)
         if (thread && this.isDismissible(thread)) {
+          this.dismissed.add(key!)
           this.threads = this.threads.filter(t => this.rowKey(t) !== key)
           this.revealed.delete(key!)
           invoke('dismiss_thread', { thread }).catch(() => {})
@@ -103,13 +107,16 @@ export class ThreadLabel {
     // but keep `stale` visible — stale means the adapter wedged or the
     // session disappeared, both of which the user should see (rendered
     // dimmed) rather than have silently disappear.
+    const live = new Set(threads.map(t => this.rowKey(t)))
+    for (const k of [...this.dismissed]) {
+      if (!live.has(k)) this.dismissed.delete(k)
+    }
     this.threads = threads
-      .filter(t => t.status !== 'idle')
+      .filter(t => t.status !== 'idle' && !this.dismissed.has(this.rowKey(t)))
       .sort((a, b) => STATUS_PRIORITY[b.status] - STATUS_PRIORITY[a.status])
     if (this.threads.length <= 1) this.expanded = false
     // Drop "revealed" state for threads that no longer exist so we don't
     // accumulate dead keys forever.
-    const live = new Set(this.threads.map(t => this.rowKey(t)))
     for (const k of [...this.revealed]) {
       if (!live.has(k)) this.revealed.delete(k)
     }
