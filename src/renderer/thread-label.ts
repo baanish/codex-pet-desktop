@@ -11,7 +11,7 @@ const STATUS_PRIORITY: Record<ThreadStatus, number> = {
 
 const STATUS_WORD: Record<ThreadStatus, string> = {
   busy: 'Thinking',
-  waiting: 'Waiting for input',
+  waiting: 'Open',
   error: 'Error',
   idle: 'Idle',
   stale: 'Idle'
