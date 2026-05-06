@@ -25,7 +25,7 @@ export interface PetSpriteAtlas {
   animations: Record<string, SpriteAnimation>
 }
 
-export type ThreadStatus = 'busy' | 'idle' | 'waiting' | 'error' | 'stale'
+export type ThreadStatus = 'busy' | 'open' | 'idle' | 'waiting' | 'error' | 'stale'
 
 export interface ActiveThread {
   tool: string

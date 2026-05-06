@@ -15,6 +15,7 @@ let isDragging = false
 const ANIMATION_MAP: Record<string, string> = {
   error: 'failed',
   busy: 'running',
+  open: 'idle',
   waiting: 'waiting',
   idle: 'idle',
   stale: 'idle'
@@ -22,7 +23,7 @@ const ANIMATION_MAP: Record<string, string> = {
 
 function getHighestPriorityAnimation(threads: ActiveThread[]): string {
   if (threads.length === 0) return 'idle'
-  const priority = { error: 4, busy: 3, waiting: 2, stale: 1, idle: 0 }
+  const priority = { error: 5, busy: 4, waiting: 3, open: 2, stale: 1, idle: 0 }
   const sorted = [...threads].sort((a, b) => priority[b.status] - priority[a.status])
   return ANIMATION_MAP[sorted[0].status] ?? 'idle'
 }

@@ -53,6 +53,7 @@ pub struct Position {
 #[serde(rename_all = "lowercase")]
 pub enum ThreadStatus {
     Busy,
+    Open,
     Idle,
     Waiting,
     Error,

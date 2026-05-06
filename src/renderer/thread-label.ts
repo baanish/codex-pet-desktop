@@ -2,16 +2,18 @@ import { invoke } from '@tauri-apps/api/core'
 import { ActiveThread, ThreadStatus } from '../shared/types'
 
 const STATUS_PRIORITY: Record<ThreadStatus, number> = {
-  error: 4,
-  busy: 3,
-  waiting: 2,
+  error: 5,
+  busy: 4,
+  waiting: 3,
+  open: 2,
   stale: 1,
   idle: 0
 }
 
 const STATUS_WORD: Record<ThreadStatus, string> = {
   busy: 'Thinking',
-  waiting: 'Open',
+  open: 'Open',
+  waiting: 'Waiting for input',
   error: 'Error',
   idle: 'Idle',
   stale: 'Idle'
@@ -225,7 +227,7 @@ export class ThreadLabel {
     if (status === 'busy') {
       return '<div class="thread-status-icon spinner"></div>'
     }
-    if (status === 'error' || status === 'waiting' || status === 'idle' || status === 'stale') {
+    if (status === 'error' || status === 'waiting' || status === 'open' || status === 'idle' || status === 'stale') {
       const cls = status === 'stale' ? 'idle' : status
       return `<div class="thread-status-icon dot ${cls}"></div>`
     }

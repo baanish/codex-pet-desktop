@@ -263,6 +263,7 @@ mod tests {
             Some(1),
             "work"
         )));
+        assert!(is_dismissible(&thread(ThreadStatus::Open, Some(1), "work")));
         assert!(is_dismissible(&thread(
             ThreadStatus::Error,
             Some(1),

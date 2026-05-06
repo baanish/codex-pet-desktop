@@ -75,23 +75,20 @@ impl ThreadAdapter for OpenCodeAdapter {
         let Some((title, time_updated)) = row else {
             return vec![ActiveThread {
                 tool: self.id().into(),
-                status: ThreadStatus::Waiting,
+                status: ThreadStatus::Open,
                 title: None,
                 cwd: cwd.clone(),
                 pid: Some(pid),
             }];
         };
 
-        // Same reasoning as the codex adapter: stale `time_updated` while the
-        // opencode process is alive means a long-running step, not an idle
-        // session. Use `waiting` so the row stays visible.
         let age = now_ms().saturating_sub(time_updated as u64);
         vec![ActiveThread {
             tool: self.id().into(),
             status: if age < BUSY_THRESHOLD_MS {
                 ThreadStatus::Busy
             } else {
-                ThreadStatus::Waiting
+                ThreadStatus::Open
             },
             title,
             cwd,
