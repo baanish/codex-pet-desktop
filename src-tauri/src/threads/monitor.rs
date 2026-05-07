@@ -76,6 +76,10 @@ impl ThreadMonitor {
         (self.callback)(visible);
     }
 
+    pub fn visible_threads(&self) -> Vec<ActiveThread> {
+        self.filter_dismissed(self.last_detected.lock().clone())
+    }
+
     fn wake_now(&self) {
         let (lock, cvar) = &*self.wake;
         let mut g = lock.lock();
@@ -289,5 +293,19 @@ mod tests {
         assert_eq!(visible.len(), 1);
         assert_eq!(visible[0].pid, Some(11));
         assert!(monitor.dismissed.lock().is_empty());
+    }
+
+    #[test]
+    fn visible_threads_excludes_runtime_dismissals() {
+        let monitor = ThreadMonitor::new(Vec::new(), |_| {});
+        let hidden = thread(ThreadStatus::Open, Some(10), "hidden");
+        let shown = thread(ThreadStatus::Open, Some(11), "shown");
+        *monitor.last_detected.lock() = vec![hidden.clone(), shown.clone()];
+        monitor.dismissed.lock().insert(thread_key(&hidden));
+
+        let visible = monitor.visible_threads();
+
+        assert_eq!(visible.len(), 1);
+        assert_eq!(visible[0].pid, Some(11));
     }
 }

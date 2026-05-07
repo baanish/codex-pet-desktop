@@ -1,3 +1,4 @@
+use crate::types::{ActiveThread, ThreadStatus};
 use crate::AppState;
 use tauri::menu::{CheckMenuItem, Menu, MenuItem, PredefinedMenuItem, Submenu};
 use tauri::{AppHandle, Emitter, Manager, Runtime, State};
@@ -62,11 +63,24 @@ pub fn popup<R: Runtime>(app: &AppHandle<R>) {
         .as_ref()
         .map(|m| m.list_adapters())
         .unwrap_or_default();
+    let dismissible_thread = state
+        .monitor
+        .lock()
+        .as_ref()
+        .and_then(|m| top_dismissible_thread(m.visible_threads()));
     let pets = crate::pet_loader::load_pets();
     let debug_anim = state.debug_animation.lock().clone();
     let pingpong = state.pingpong.lock().clone();
 
-    let menu = match build_menu(app, &cfg, &agents, &pets, debug_anim.as_deref(), &pingpong) {
+    let menu = match build_menu(
+        app,
+        &cfg,
+        &agents,
+        &pets,
+        debug_anim.as_deref(),
+        &pingpong,
+        dismissible_thread.as_ref(),
+    ) {
         Ok(m) => m,
         Err(_) => return,
     };
@@ -82,6 +96,7 @@ fn build_menu<R: Runtime>(
     pets: &[crate::types::PetInfo],
     debug_anim: Option<&str>,
     pingpong: &std::collections::HashMap<String, bool>,
+    dismissible_thread: Option<&ActiveThread>,
 ) -> tauri::Result<Menu<R>> {
     let menu = Menu::new(app)?;
 
@@ -255,6 +270,19 @@ fn build_menu<R: Runtime>(
     )?;
     menu.append(&hide_app_server)?;
 
+    let dismiss_label = dismissible_thread
+        .and_then(|t| t.title.as_deref())
+        .map(|title| format!("Dismiss Thread: {}", menu_title(title)))
+        .unwrap_or_else(|| "Dismiss Thread".into());
+    let dismiss = MenuItem::with_id(
+        app,
+        "dismiss-thread",
+        dismiss_label,
+        dismissible_thread.is_some(),
+        None::<&str>,
+    )?;
+    menu.append(&dismiss)?;
+
     let aot = CheckMenuItem::with_id(
         app,
         "always-on-top",
@@ -272,6 +300,36 @@ fn build_menu<R: Runtime>(
 
     // Menu events bubble to the App via Builder::on_menu_event in lib.rs.
     Ok(menu)
+}
+
+fn top_dismissible_thread(mut threads: Vec<ActiveThread>) -> Option<ActiveThread> {
+    threads.retain(|t| t.status != ThreadStatus::Idle && t.status != ThreadStatus::Busy);
+    threads.sort_by_key(|t| std::cmp::Reverse(thread_priority(t.status)));
+    threads.into_iter().next()
+}
+
+fn thread_priority(status: ThreadStatus) -> u8 {
+    match status {
+        ThreadStatus::Error => 5,
+        ThreadStatus::Busy => 4,
+        ThreadStatus::Waiting => 3,
+        ThreadStatus::Open => 2,
+        ThreadStatus::Stale => 1,
+        ThreadStatus::Idle => 0,
+    }
+}
+
+fn menu_title(title: &str) -> String {
+    let title = title.trim().trim_start_matches('#').trim();
+    let mut chars = title.chars();
+    let short: String = chars.by_ref().take(32).collect();
+    if chars.next().is_some() {
+        format!("{}...", short)
+    } else if short.is_empty() {
+        "Untitled thread".into()
+    } else {
+        short
+    }
 }
 
 fn default_pingpong(name: &str) -> bool {
@@ -371,6 +429,12 @@ fn handle_menu_event<R: Runtime>(app: &AppHandle<R>, id: &str) {
         *state.hide_codex_app_server.lock() = cfg.hide_codex_app_server;
         if let Some(monitor) = state.monitor.lock().as_ref() {
             monitor.trigger();
+        }
+    } else if id == "dismiss-thread" {
+        if let Some(monitor) = state.monitor.lock().as_ref() {
+            if let Some(thread) = top_dismissible_thread(monitor.visible_threads()) {
+                monitor.dismiss_thread(thread);
+            }
         }
     } else if id == "quit" {
         app.exit(0);

@@ -67,13 +67,22 @@ export class ThreadLabel {
         const key = dismiss.dataset.key
         const thread = this.threads.find(t => this.rowKey(t) === key)
         if (thread && this.isDismissible(thread)) {
+          const row = dismiss.closest('.thread-row') as HTMLElement | null
+          row?.classList.add('dismissing')
+          dismiss.classList.add('confirmed')
+          dismiss.setAttribute('aria-label', 'Thread dismissed')
+          dismiss.textContent = '✓'
+          const button = dismiss as HTMLButtonElement
+          button.disabled = true
           this.dismissed.add(key!)
-          this.threads = this.threads.filter(t => this.rowKey(t) !== key)
           this.revealed.delete(key!)
           invoke('dismiss_thread', { thread }).catch(() => {})
           setTimeout(() => this.dismissed.delete(key!), 5000)
-          this.render()
-          this.onResize?.()
+          setTimeout(() => {
+            this.threads = this.threads.filter(t => this.rowKey(t) !== key)
+            this.render()
+            this.onResize?.()
+          }, 180)
         }
         return
       }

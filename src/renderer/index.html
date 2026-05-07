@@ -60,6 +60,11 @@
       border-top: 0.5px solid rgba(255, 255, 255, 0.08);
     }
     .thread-row.stale { opacity: 0.5; }
+    .thread-row.dismissing {
+      opacity: 0.55;
+      transform: translateY(-1px);
+      transition: opacity 0.16s ease, transform 0.16s ease;
+    }
     .thread-title {
       font-size: var(--thread-title-size);
       font-weight: 600;
@@ -153,6 +158,10 @@
     .thread-dismiss:hover {
       background: rgba(255, 255, 255, 0.16);
       color: rgba(255, 255, 255, 0.95);
+    }
+    .thread-dismiss.confirmed {
+      background: rgba(91, 214, 126, 0.2);
+      color: #7ee08f;
     }
     @keyframes pet-spin {
       to { transform: rotate(360deg); }
